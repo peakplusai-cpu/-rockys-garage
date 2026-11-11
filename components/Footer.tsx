@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ContactButtons } from "@/components/ContactButtons";
 import { LineLaunch } from "@/components/LineLaunch";
 import type { SiteSettings } from "@/lib/settings";
-import { SITE_LOCALITY, SITE_NAME, SITE_NAME_ZH, SITE_STREET } from "@/lib/site";
+import { SITE_NAME, SITE_NAME_ZH } from "@/lib/site";
 import type { Staff } from "@/lib/types";
 
 export function Footer({ staff, settings }: { staff: Staff[]; settings: SiteSettings }) {
@@ -14,10 +14,6 @@ export function Footer({ staff, settings }: { staff: Staff[]; settings: SiteSett
             <span className="wordmark-en">{SITE_NAME}</span>
             <span className="wordmark-zh">{SITE_NAME_ZH}</span>
           </div>
-          <p className="footer-note">
-            {SITE_LOCALITY}
-            {SITE_STREET}。美式精選中古車，實車在庫、價格透明。賞車與估價請用 LINE 或 Instagram。
-          </p>
           <ContactButtons lineUrl={settings.lineUrl} instagramUrl={settings.instagramUrl} />
         </div>
         <div>
@@ -40,7 +36,7 @@ export function Footer({ staff, settings }: { staff: Staff[]; settings: SiteSett
         </div>
       </div>
       <div className="colophon">
-        <span>Rocky&apos;s Garage · 台中</span>
+        <span>{SITE_NAME}</span>
         <Link href="/admin">員工入口</Link>
       </div>
     </footer>

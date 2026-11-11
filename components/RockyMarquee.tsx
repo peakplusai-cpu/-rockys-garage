@@ -1,7 +1,7 @@
 const TICKER = [
   "AMERICAN IRON",
   "ROCKY'S GARAGE",
-  "台中精選",
+  "SPORTS STOCK",
   "PRE-OWNED",
   "實車在庫",
   "LINE 預約",

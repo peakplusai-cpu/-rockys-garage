@@ -114,30 +114,99 @@ body::before {
   padding: 120px var(--pad) 64px;
   border-bottom: 1px solid var(--hair);
   overflow: hidden;
+  background: #070707;
+}
+
+.rocky-hero-reel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.rocky-hero-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.4s var(--ease);
+}
+
+.rocky-hero-slide.on {
+  opacity: 1;
+}
+
+.rocky-hero-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 45%;
+  filter: contrast(1.05) saturate(0.92);
+}
+
+.rocky-hero-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.45) 42%, rgba(0, 0, 0, 0.72) 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.55) 0%, transparent 55%);
+  pointer-events: none;
 }
 
 .rocky-hero-grid {
   position: absolute;
   inset: 0;
+  z-index: 2;
   background:
-    linear-gradient(135deg, transparent 48%, rgba(255, 176, 32, 0.08) 49%, rgba(255, 176, 32, 0.08) 51%, transparent 52%),
+    linear-gradient(135deg, transparent 48%, rgba(255, 176, 32, 0.06) 49%, rgba(255, 176, 32, 0.06) 51%, transparent 52%),
     linear-gradient(to right, var(--hair) 1px, transparent 1px),
     linear-gradient(to bottom, var(--hair) 1px, transparent 1px);
   background-size: 100% 100%, 72px 72px, 72px 72px;
-  opacity: 0.9;
+  opacity: 0.75;
+  pointer-events: none;
 }
 
 .rocky-hero-frame {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   max-width: 920px;
 }
 
+.rocky-hero-credit {
+  position: absolute;
+  right: var(--pad);
+  bottom: 12px;
+  z-index: 4;
+  margin: 0;
+  max-width: min(42ch, 50vw);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  color: rgba(244, 240, 230, 0.45);
+  text-align: right;
+}
+
+.rocky-hero-credit a {
+  color: rgba(244, 240, 230, 0.55);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rocky-hero-slide {
+    transition: none;
+  }
+}
+
 .rocky-display {
-  margin: 12px 0 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.rocky-hero .hero-actions {
+  margin-top: 28px;
 }
 
 .rocky-display-en {
