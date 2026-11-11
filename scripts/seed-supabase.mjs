@@ -57,7 +57,7 @@ if (staff.length) {
   if (error) throw error;
 }
 
-const { error: carsErr } = await db.from("rocky_cars").upsert(
+const { error: carsErr } = cars.length ? await db.from("rocky_cars").upsert(
   cars.map((car) => ({
     id: car.id,
     slug: car.slug,
@@ -87,7 +87,7 @@ const { error: carsErr } = await db.from("rocky_cars").upsert(
     created_at: car.createdAt,
     updated_at: car.updatedAt,
   }))
-);
+) : { error: null };
 if (carsErr) throw carsErr;
 
 const { error: setErr } = await db.from("rocky_site_settings").upsert({
