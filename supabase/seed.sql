@@ -7,7 +7,7 @@ values (
   '店長',
   'https://line.me/R/ti/p/@rockysgarage',
   'rockysgarage',
-  '美式精選、賞車估價一次談妥。',
+  '',
   '',
   1,
   now()
