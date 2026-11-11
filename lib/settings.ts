@@ -1,15 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { unstable_cache } from "next/cache";
 import { dirname, join } from "path";
+import { AdminDbError, classifyDbError } from "./admin-errors";
 import {
   PUBLIC_DATA_TAG,
-  failSoft,
   isReadOnlyRuntime,
+  logSupabasePublic,
   supabaseAdmin,
   supabaseAdminConfigured,
   supabaseAnonConfigured,
   supabaseConfigured,
   supabasePublic,
+  supabaseWriteBlocker,
+  withTimeout,
 } from "./supabase";
 
 export type VideoSlot = { url: string; caption: string };
@@ -144,52 +147,39 @@ function normalize(partial: Partial<SiteSettings> & { instagram?: string }): Sit
   };
 }
 
+type SettingsRow = {
+  instagram?: string;
+  line_url?: string;
+  instagram_url?: string;
+  featured_video_url?: string;
+  featured_video_caption?: string;
+};
+
+function rowToSettings(row: SettingsRow): SiteSettings {
+  return normalize({
+    lineUrl: row.line_url,
+    instagramUrl: row.instagram_url,
+    instagram: row.instagram,
+    featuredVideoUrl: row.featured_video_url,
+    featuredVideoCaption: row.featured_video_caption,
+  });
+}
+
+/** Throws on any failure so unstable_cache never stores a fallback as if it were real data. */
 const cachedRemoteSettings = unstable_cache(
   async (): Promise<SiteSettings> => {
-    try {
-      if (!supabaseAnonConfigured() && !supabaseAdminConfigured()) return defaultSettings();
-      const row = await failSoft(
-        supabasePublic()
-          .from("rocky_site_settings")
-          .select("*")
-          .eq("id", 1)
-          .maybeSingle()
-          .then(({ data, error }) => {
-            if (error || !data) return null;
-            return data as {
-              instagram?: string;
-              line_url?: string;
-              instagram_url?: string;
-              featured_video_url?: string;
-              featured_video_caption?: string;
-            };
-          }),
-        null
-      );
-      if (!row) return defaultSettings();
-      return normalize({
-        lineUrl: row.line_url,
-        instagramUrl: row.instagram_url,
-        instagram: row.instagram,
-        featuredVideoUrl: row.featured_video_url,
-        featuredVideoCaption: row.featured_video_caption,
-      });
-    } catch {
-      return defaultSettings();
-    }
+    if (!supabaseAnonConfigured() && !supabaseAdminConfigured()) return defaultSettings();
+    const { data, error } = await withTimeout(
+      supabasePublic().from("rocky_site_settings").select("*").eq("id", 1).maybeSingle()
+    );
+    if (error) throw error;
+    return data ? rowToSettings(data as SettingsRow) : defaultSettings();
   },
   ["rocky-public-settings"],
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
 );
 
-export async function getSettings(): Promise<SiteSettings> {
-  if (supabaseConfigured()) {
-    try {
-      return await cachedRemoteSettings();
-    } catch {
-      return defaultSettings();
-    }
-  }
+function readLocalSettings(): SiteSettings {
   if (isReadOnlyRuntime()) return defaultSettings();
   try {
     if (!existsSync(SETTINGS_PATH)) {
@@ -206,47 +196,78 @@ export async function getSettings(): Promise<SiteSettings> {
   }
 }
 
+/** Public pages: fail-soft with defaults. */
+export async function getSettings(): Promise<SiteSettings> {
+  if (!supabaseConfigured()) return readLocalSettings();
+  try {
+    return await cachedRemoteSettings();
+  } catch (error) {
+    logSupabasePublic("getSettings", error);
+    return defaultSettings();
+  }
+}
+
+/** Admin: strict, uncached. A failed read must not look like "settings are empty". */
+export async function getAdminSettings(): Promise<SiteSettings> {
+  const blocker = supabaseWriteBlocker();
+  if (blocker) throw new AdminDbError(blocker);
+  if (!supabaseConfigured()) return readLocalSettings();
+  let res: { data: unknown; error: { message: string; code?: string } | null };
+  try {
+    res = await supabaseAdmin().from("rocky_site_settings").select("*").eq("id", 1).maybeSingle();
+  } catch (error) {
+    throw classifyDbError(error);
+  }
+  if (res.error) throw classifyDbError(res.error);
+  return res.data ? rowToSettings(res.data as SettingsRow) : defaultSettings();
+}
+
 function persist(settings: SiteSettings): void {
-  if (isReadOnlyRuntime()) return;
+  if (isReadOnlyRuntime()) throw new AdminDbError("no_url");
   try {
     mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
     const tmp = `${SETTINGS_PATH}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, JSON.stringify(settings, null, 2), "utf8");
     renameSync(tmp, SETTINGS_PATH);
   } catch (error) {
-    console.error("settings persist skipped", error);
+    throw new AdminDbError("db", error instanceof Error ? error.message : "local file write failed");
   }
 }
 
 export async function saveSettings(settings: SiteSettings): Promise<void> {
-  if (supabaseAdminConfigured()) {
-    const { error } = await supabaseAdmin()
-      .from("rocky_site_settings")
-      .upsert({
-        id: 1,
-        instagram: videoPack(settings),
-        line_url: settings.lineUrl,
-        instagram_url: settings.instagramUrl,
-        featured_video_url: settings.featuredVideoUrl,
-        featured_video_caption: settings.featuredVideoCaption,
-        updated_at: new Date().toISOString(),
-      });
-    if (error) {
-      const { error: fallback } = await supabaseAdmin()
-        .from("rocky_site_settings")
-        .upsert({
-          id: 1,
-          instagram: videoPack(settings),
-          line_url: settings.lineUrl,
-          instagram_url: settings.instagramUrl,
-          updated_at: new Date().toISOString(),
-        });
-      if (fallback) throw error;
-    }
+  const blocker = supabaseWriteBlocker();
+  if (blocker) throw new AdminDbError(blocker);
+  if (!supabaseConfigured()) {
+    persist(settings);
     return;
   }
-  if (supabaseConfigured()) {
-    throw new Error("Saving contact URLs needs SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY");
+  const db = supabaseAdmin();
+  const base = {
+    id: 1,
+    instagram: videoPack(settings),
+    line_url: settings.lineUrl,
+    instagram_url: settings.instagramUrl,
+    updated_at: new Date().toISOString(),
+  };
+  const full = {
+    ...base,
+    featured_video_url: settings.featuredVideoUrl,
+    featured_video_caption: settings.featuredVideoCaption,
+  };
+
+  const write = async (row: Record<string, unknown>) => {
+    try {
+      return await db.from("rocky_site_settings").upsert(row, { onConflict: "id" }).select("id");
+    } catch (error) {
+      throw classifyDbError(error);
+    }
+  };
+
+  let res = await write(full);
+  // Only an older table without the video columns may fall back; the video pack is also stored in `instagram`.
+  if (res.error && (res.error.code === "PGRST204" || res.error.code === "42703")) {
+    res = await write(base);
   }
-  persist(settings);
+  if (res.error) throw classifyDbError(res.error);
+  if (!res.data || res.data.length === 0) throw new AdminDbError("empty");
 }

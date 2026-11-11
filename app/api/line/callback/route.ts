@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
-import { getStore, saveStore } from "@/lib/store";
+import { listAdminStaff, saveStaff } from "@/lib/store";
 
 export async function GET(request: Request) {
   if (!(await isAuthenticated())) {
@@ -37,14 +37,18 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/admin/staff?error=profile", request.url));
   }
   const profile = (await profileRes.json()) as { userId?: string; displayName?: string };
-  const store = await getStore();
-  const staff = store.staff.find((person) => person.id === staffId);
-  if (staff && profile.userId) {
-    staff.lineUserId = profile.userId;
-    if (!staff.lineId && profile.displayName) {
-      staff.note = staff.note || `LINE：${profile.displayName}`;
+  try {
+    const staff = (await listAdminStaff()).find((person) => person.id === staffId);
+    if (staff && profile.userId) {
+      await saveStaff({
+        ...staff,
+        lineUserId: profile.userId,
+        note: !staff.lineId && profile.displayName ? staff.note || `LINE：${profile.displayName}` : staff.note,
+      });
     }
-    await saveStore(store);
+  } catch (error) {
+    console.error("line callback save", error);
+    return NextResponse.redirect(new URL("/admin/staff?error=db", request.url));
   }
   return NextResponse.redirect(new URL("/admin/staff?bound=1", request.url));
 }

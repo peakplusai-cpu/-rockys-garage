@@ -1,8 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { classifyDbError } from "@/lib/admin-errors";
 import { adminExists, createSession, destroySession, hashPassword, passwordMatches } from "@/lib/auth";
-import { getStore, saveStore } from "@/lib/store";
+import { getAdminRecord, saveAdminRecord } from "@/lib/store";
 
 export async function setupAdmin(formData: FormData) {
   if (await adminExists()) {
@@ -16,12 +17,14 @@ export async function setupAdmin(formData: FormData) {
   if (password !== confirm) {
     redirect("/admin/setup?error=mismatch");
   }
-  const store = await getStore();
-  store.admin = {
-    passwordHash: hashPassword(password),
-    createdAt: new Date().toISOString(),
-  };
-  await saveStore(store);
+  try {
+    await saveAdminRecord({
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    redirect(`/admin/setup?error=${classifyDbError(error).code}`);
+  }
   await createSession();
   redirect("/admin");
 }
@@ -32,8 +35,13 @@ export async function loginAdmin(formData: FormData) {
     await createSession();
     redirect("/admin");
   }
-  const store = await getStore();
-  if (!passwordMatches(password, store.admin?.passwordHash)) {
+  let hash: string | null = null;
+  try {
+    hash = (await getAdminRecord())?.passwordHash ?? null;
+  } catch (error) {
+    redirect(`/admin/login?error=${classifyDbError(error).code}`);
+  }
+  if (!passwordMatches(password, hash)) {
     redirect("/admin/login?error=invalid");
   }
   await createSession();

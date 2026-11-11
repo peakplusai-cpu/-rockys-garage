@@ -2,12 +2,15 @@
 
 import { revalidatePublic } from "@/lib/revalidate-public";
 import { redirect } from "next/navigation";
+import { adminErrorMessage, classifyDbError, isRedirectError } from "@/lib/admin-errors";
 import { isAuthenticated } from "@/lib/auth";
 import { parseContactUrl } from "@/lib/contacts";
-import { getSettings, saveSettings } from "@/lib/settings";
+import { getAdminSettings, saveSettings } from "@/lib/settings";
 import { parseFeaturedVideoUrl } from "@/lib/video";
 
-export async function saveContacts(formData: FormData) {
+export type SettingsFormResult = { error: string } | undefined;
+
+export async function saveContacts(formData: FormData): Promise<SettingsFormResult> {
   if (!(await isAuthenticated())) redirect("/admin/login");
   const line = parseContactUrl(String(formData.get("lineUrl") ?? ""), "line");
   const ig = parseContactUrl(String(formData.get("instagramUrl") ?? ""), "instagram");
@@ -20,17 +23,14 @@ export async function saveContacts(formData: FormData) {
       caption: String(formData.get(`featuredVideoCaption${suffix}`) ?? "").trim().slice(0, 280),
     };
   });
-  if (!line.ok) redirect("/admin/settings?error=line");
-  if (!ig.ok) redirect("/admin/settings?error=instagram");
-  if (featuredVideos.some((slot) => !slot.ok)) redirect("/admin/settings?error=video");
-
-  let current: Awaited<ReturnType<typeof getSettings>>;
-  try {
-    current = await getSettings();
-  } catch {
-    redirect("/admin/settings?error=save");
+  if (!line.ok) return { error: "LINE 網址格式不正確。" };
+  if (!ig.ok) return { error: "Instagram 網址格式不正確。" };
+  if (featuredVideos.some((slot) => !slot.ok)) {
+    return { error: "請貼 Instagram 貼文／Reels 或抖音影片連結。" };
   }
+
   try {
+    const current = await getAdminSettings();
     const slots = featuredVideos.map(({ url, caption }) => ({ url, caption }));
     await saveSettings({
       ...current,
@@ -40,8 +40,11 @@ export async function saveContacts(formData: FormData) {
       featuredVideoUrl: slots[0].url,
       featuredVideoCaption: slots[0].caption,
     });
-  } catch {
-    redirect("/admin/settings?error=save");
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    console.error("saveContacts", error);
+    const classified = classifyDbError(error);
+    return { error: adminErrorMessage(classified.code, classified.detail) };
   }
   revalidatePublic(["/admin/settings"]);
   redirect("/admin/settings?saved=1");

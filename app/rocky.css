@@ -398,3 +398,30 @@ body::before {
   background: var(--paper);
   border-color: var(--hair);
 }
+
+/* Admin: database connection warnings */
+.admin-alert {
+  margin: 0 0 28px;
+  padding: 14px 18px;
+  border: 1px solid #ff4d3d;
+  background: rgba(255, 77, 61, 0.12);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.admin-alert a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--accent);
+}
+
+.admin-alert-warn {
+  border-color: var(--accent);
+  background: rgba(255, 176, 32, 0.1);
+}
+
+.flash-bad {
+  border-color: #ff4d3d;
+  color: #ff8a7d;
+}

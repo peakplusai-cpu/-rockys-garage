@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { setupAdmin } from "@/app/actions/auth";
+import { adminErrorMessage } from "@/lib/admin-errors";
 import { adminExists } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,13 @@ export default async function SetupPage({
   if (await adminExists()) redirect("/admin/login");
   const { error } = await searchParams;
   const message =
-    error === "short" ? "密碼至少八碼。" : error === "mismatch" ? "兩次輸入不一致。" : "";
+    error === "short"
+      ? "密碼至少八碼。"
+      : error === "mismatch"
+        ? "兩次輸入不一致。"
+        : error
+          ? adminErrorMessage(error)
+          : "";
 
   return (
     <main className="gate">

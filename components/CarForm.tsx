@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { BODY_TYPES, DOOR_OPTIONS, specsToText } from "@/lib/catalog";
 import type { Car } from "@/lib/types";
 
@@ -9,32 +9,56 @@ export function CarForm({
   action,
 }: {
   car?: Car;
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<{ error: string } | undefined>;
 }) {
   const [photoUrls, setPhotoUrls] = useState(
     car?.photos.map((photo) => photo.url).join("\n") ?? ""
   );
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
 
   async function onUpload(files: FileList | null) {
     if (!files?.length) return;
     setUploading(true);
+    setError("");
     const next: string[] = [];
     for (const file of Array.from(files)) {
       const body = new FormData();
       body.set("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body });
-      if (res.ok) {
-        const data = (await res.json()) as { url: string };
-        next.push(data.url);
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body });
+        const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+        if (res.ok && data.url) next.push(data.url);
+        else setError(`照片上傳失敗：${data.error || res.status}。請確認 rocky-uploads bucket 與 SUPABASE_SERVICE_ROLE_KEY。`);
+      } catch {
+        setError("照片上傳失敗：網路錯誤。");
       }
     }
     setPhotoUrls((prev) => [prev, ...next].filter(Boolean).join("\n"));
     setUploading(false);
   }
 
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = new FormData(event.currentTarget);
+    setError("");
+    startTransition(async () => {
+      const result = await action(body);
+      if (result?.error) {
+        setError(result.error);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+  }
+
   return (
-    <form action={action}>
+    <form onSubmit={onSubmit}>
+      {error ? (
+        <p className="flash" role="alert">
+          {error}
+        </p>
+      ) : null}
       {car ? <input type="hidden" name="id" value={car.id} /> : null}
       <div className="form-grid">
         <div className="field">
@@ -168,8 +192,8 @@ export function CarForm({
             <img key={url} src={url} alt="" />
           ))}
       </div>
-      <button className="btn" type="submit">
-        儲存
+      <button className="btn" type="submit" disabled={pending || uploading}>
+        {pending ? "儲存中…" : "儲存"}
       </button>
     </form>
   );

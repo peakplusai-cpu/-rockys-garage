@@ -1,14 +1,21 @@
 import { redirect } from "next/navigation";
 import { hashPassword, verifyPassword } from "./password";
 import { createSession, destroySession, envAdminPassword, isAuthenticated } from "./session";
-import { getStore } from "./store";
+import { getAdminRecord } from "./store";
 
 export { hashPassword, verifyPassword, createSession, destroySession, envAdminPassword, isAuthenticated };
 
+/**
+ * When the database cannot be read we answer "yes, an admin exists": the login page then shows the
+ * real error instead of inviting someone to create a new password against an unreadable database.
+ */
 export async function adminExists(): Promise<boolean> {
   if (envAdminPassword()) return true;
-  const store = await getStore();
-  return Boolean(store.admin);
+  try {
+    return Boolean(await getAdminRecord());
+  } catch {
+    return true;
+  }
 }
 
 export function passwordMatches(password: string, storedHash?: string | null): boolean {

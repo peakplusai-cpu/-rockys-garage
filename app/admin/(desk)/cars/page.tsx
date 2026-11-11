@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { togglePublish } from "@/app/actions/cars";
+import { adminErrorMessage, attempt } from "@/lib/admin-errors";
 import { requireDeskAuth } from "@/lib/auth";
 import { doorLabel } from "@/lib/catalog";
 import { formatPrice, statusLabel } from "@/lib/format";
@@ -7,14 +8,26 @@ import { listAdminCars } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminCarsPage() {
+export default async function AdminCarsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string; error?: string }>;
+}) {
   await requireDeskAuth();
-  const cars = await listAdminCars();
+  const { saved, error: actionError } = await searchParams;
+  const { data: cars, error: readError } = await attempt(() => listAdminCars(), []);
 
   return (
     <>
       <p className="engraved">Inventory</p>
       <h1>庫存</h1>
+      {saved ? <p className="flash">已儲存（資料庫已確認寫入）。</p> : null}
+      {actionError ? <p className="flash" role="alert">{adminErrorMessage(actionError)}</p> : null}
+      {readError ? (
+        <p className="flash" role="alert">
+          讀不到庫存，下方清單不代表資料庫是空的。{adminErrorMessage(readError.code, readError.detail)}
+        </p>
+      ) : null}
       <div className="row-actions" style={{ marginBottom: 32 }}>
         <Link className="btn" href="/admin/cars/new">
           新增車輛

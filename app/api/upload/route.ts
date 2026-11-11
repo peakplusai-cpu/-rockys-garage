@@ -3,7 +3,8 @@ import { join } from "path";
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { uid } from "@/lib/id";
-import { supabaseAdmin, supabaseAdminConfigured } from "@/lib/supabase";
+import { adminErrorMessage, classifyDbError } from "@/lib/admin-errors";
+import { supabaseAdmin, supabaseConfigured, supabaseWriteBlocker } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
@@ -18,25 +19,33 @@ export async function POST(request: Request) {
   const name = `${uid("up")}.${ext}`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  if (supabaseAdminConfigured()) {
-    const db = supabaseAdmin();
-    const { error } = await db.storage.from("rocky-uploads").upload(name, buffer, {
-      contentType: file.type || "image/jpeg",
-      upsert: false,
-    });
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    const { data } = db.storage.from("rocky-uploads").getPublicUrl(name);
-    return NextResponse.json({ url: data.publicUrl });
+  const blocker = supabaseWriteBlocker();
+  if (blocker) {
+    return NextResponse.json({ error: adminErrorMessage(blocker) }, { status: 500 });
   }
 
-  if (process.env.VERCEL) {
-    return NextResponse.json(
-      { error: "Photo upload on Vercel needs SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY" },
-      { status: 500 }
-    );
+  if (supabaseConfigured()) {
+    try {
+      const db = supabaseAdmin();
+      const { error } = await db.storage.from("rocky-uploads").upload(name, buffer, {
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
+      if (error) {
+        const bucketMissing = /bucket not found/i.test(error.message);
+        return NextResponse.json(
+          { error: bucketMissing ? "找不到 rocky-uploads bucket，請執行 supabase/schema.sql" : error.message },
+          { status: 500 }
+        );
+      }
+      const { data } = db.storage.from("rocky-uploads").getPublicUrl(name);
+      return NextResponse.json({ url: data.publicUrl });
+    } catch (error) {
+      const c = classifyDbError(error);
+      return NextResponse.json({ error: adminErrorMessage(c.code, c.detail) }, { status: 500 });
+    }
   }
+
   const dir = join(process.cwd(), "public", "uploads");
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, name), buffer);

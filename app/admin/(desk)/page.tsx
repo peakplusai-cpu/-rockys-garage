@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { adminErrorMessage, attempt } from "@/lib/admin-errors";
 import { requireDeskAuth } from "@/lib/auth";
 import { formatPrice } from "@/lib/format";
 import { listAdminCars, listAdminStaff } from "@/lib/store";
@@ -7,7 +8,11 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminHome() {
   await requireDeskAuth();
-  const [cars, staff] = await Promise.all([listAdminCars(), listAdminStaff()]);
+  const [{ data: cars, error: carsError }, { data: staff, error: staffError }] = await Promise.all([
+    attempt(() => listAdminCars(), []),
+    attempt(() => listAdminStaff(), []),
+  ]);
+  const readError = carsError ?? staffError;
   const published = cars.filter((car) => car.published).length;
   const hidden = cars.length - published;
 
@@ -15,6 +20,14 @@ export default async function AdminHome() {
     <>
       <p className="engraved">Desk</p>
       <h1>總覽</h1>
+      {readError ? (
+        <p className="flash" role="alert">
+          讀不到資料庫，下方數字不可信。{adminErrorMessage(readError.code, readError.detail)}{" "}
+          <Link href="/admin/health" className="link-line">
+            查看連線檢查
+          </Link>
+        </p>
+      ) : null}
       <p className="mute" style={{ marginBottom: 48, maxWidth: 420, lineHeight: 1.7 }}>
         {cars.length} 輛在庫，{published} 輛上架，{hidden} 輛未公開。{staff.length}{" "}
         位顧問。LINE / Instagram 請到「聯絡設定」。

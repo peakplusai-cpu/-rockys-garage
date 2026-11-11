@@ -2,10 +2,11 @@
 
 import { revalidatePublic } from "@/lib/revalidate-public";
 import { redirect } from "next/navigation";
+import { classifyDbError, isRedirectError } from "@/lib/admin-errors";
 import { isAuthenticated } from "@/lib/auth";
 import { uid } from "@/lib/id";
 import { resolveLineUrl } from "@/lib/line";
-import { getStore, saveStore } from "@/lib/store";
+import { listAdminStaff, removeStaff, saveStaff } from "@/lib/store";
 
 async function requireAuth() {
   if (!(await isAuthenticated())) {
@@ -26,38 +27,51 @@ export async function upsertStaff(formData: FormData) {
     redirect("/admin/staff?error=line");
   }
   const lineUrl = resolveLineUrl(lineUrlRaw, lineId);
-  const store = await getStore();
-  const existing = store.staff.find((person) => person.id === id);
-  if (existing) {
-    existing.displayName = displayName;
-    existing.role = role;
-    existing.lineId = lineId;
-    existing.lineUrl = lineUrl;
-    existing.note = note;
-    existing.sortOrder = sortOrder || existing.sortOrder;
-  } else {
-    store.staff.push({
-      id: uid("st"),
-      displayName,
-      role,
-      lineId,
-      lineUrl,
-      note,
-      lineUserId: "",
-      sortOrder: sortOrder || store.staff.length + 1,
-      createdAt: new Date().toISOString(),
-    });
+  try {
+    const staff = await listAdminStaff();
+    const existing = staff.find((person) => person.id === id);
+    await saveStaff(
+      existing
+        ? {
+            ...existing,
+            displayName,
+            role,
+            lineId,
+            lineUrl,
+            note,
+            sortOrder: sortOrder || existing.sortOrder,
+          }
+        : {
+            id: uid("st"),
+            displayName,
+            role,
+            lineId,
+            lineUrl,
+            note,
+            lineUserId: "",
+            sortOrder: sortOrder || staff.length + 1,
+            createdAt: new Date().toISOString(),
+          }
+    );
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    console.error("upsertStaff", error);
+    redirect(`/admin/staff?error=${classifyDbError(error).code}`);
   }
-  await saveStore(store);
   revalidatePublic(["/admin/staff"]);
-  redirect("/admin/staff");
+  redirect("/admin/staff?saved=1");
 }
 
 export async function deleteStaff(formData: FormData) {
   await requireAuth();
   const id = String(formData.get("id") ?? "");
-  const store = await getStore();
-  store.staff = store.staff.filter((person) => person.id !== id);
-  await saveStore(store);
+  try {
+    await removeStaff(id);
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    console.error("deleteStaff", error);
+    redirect(`/admin/staff?error=${classifyDbError(error).code}`);
+  }
   revalidatePublic(["/admin/staff"]);
+  redirect("/admin/staff?saved=1");
 }

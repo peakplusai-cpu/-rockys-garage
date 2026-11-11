@@ -1,10 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { AdminErrorCode } from "./admin-errors";
 
 /** Must match hosted Supabase projects — rejects Vercel URLs and typos early. */
 const SUPABASE_PROJECT_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i;
 
 /** Abort hung PostgREST calls instead of waiting for the ~14s platform timeout. */
 export const SUPABASE_FETCH_MS = 2000;
+/** Admin reads/writes must not be cut short by the public fail-soft budget. */
+export const ADMIN_FETCH_MS = 8000;
 /** First contact / NXDOMAIN / connect: do not wait out resolver or 12s write budget. */
 export const SUPABASE_CONNECT_MS = 1500;
 export const PUBLIC_DATA_TAG = "rocky-public";
@@ -71,9 +74,11 @@ export function logSupabasePublic(scope: string, error: unknown): void {
 
 function supabaseFetch(kind: "public" | "admin", timeoutMs = SUPABASE_FETCH_MS): typeof fetch {
   return (input, init) => {
-    if (supabaseUnreachable()) return Promise.reject(unreachableError());
+    const admin = kind === "admin";
+    // Admin writes ignore the public "unreachable" latch so a past blip cannot silently drop a save.
+    if (!admin && supabaseUnreachable()) return Promise.reject(unreachableError());
     const controller = new AbortController();
-    const budget = attemptTimeout(timeoutMs);
+    const budget = admin ? timeoutMs : attemptTimeout(timeoutMs);
     const timer = setTimeout(() => controller.abort(), budget);
     const parent = init?.signal;
     if (parent) {
@@ -152,13 +157,38 @@ export function isValidSupabaseProjectUrl(url: string): boolean {
   return Boolean(url && SUPABASE_PROJECT_URL.test(url));
 }
 
+let warnedBadUrl = false;
+
 export function supabaseUrl(): string {
   const raw = supabaseUrlRaw();
   if (!isValidSupabaseProjectUrl(raw)) {
-    if (raw) logSupabasePublic("config", "ignored invalid NEXT_PUBLIC_SUPABASE_URL");
+    if (raw && !warnedBadUrl) {
+      warnedBadUrl = true;
+      logSupabasePublic("config", "ignored invalid NEXT_PUBLIC_SUPABASE_URL");
+    }
     return "";
   }
   return raw;
+}
+
+export type KeyKind = "none" | "service" | "anon" | "unknown";
+
+/** Classify a key by prefix / JWT role without ever exposing the value. */
+export function classifyKey(key: string): KeyKind {
+  if (!key) return "none";
+  if (key.startsWith("sb_secret_")) return "service";
+  if (key.startsWith("sb_publishable_")) return "anon";
+  const parts = key.split(".");
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as { role?: string };
+      if (payload.role === "service_role") return "service";
+      if (payload.role === "anon") return "anon";
+    } catch {
+      return "unknown";
+    }
+  }
+  return "unknown";
 }
 
 /**
@@ -178,7 +208,10 @@ export function supabaseAnonKey(): string {
  * Server key: legacy JWT `eyJ…` (service_role) or `sb_secret_…`.
  */
 export function supabaseSecretKey(): string {
-  return firstEnv("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_KEY");
+  const candidates = ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_KEY"]
+    .map((name) => process.env[name]?.trim() || "")
+    .filter(Boolean);
+  return candidates.find((key) => classifyKey(key) === "service") ?? candidates[0] ?? "";
 }
 
 /** Prefer Supabase whenever the project URL is set — never JSON files on Vercel. */
@@ -196,7 +229,7 @@ export function supabaseAnonConfigured(): boolean {
 
 const adminClients = new Map<number, SupabaseClient>();
 
-export function supabaseAdmin(timeoutMs = SUPABASE_FETCH_MS): SupabaseClient {
+export function supabaseAdmin(timeoutMs = ADMIN_FETCH_MS): SupabaseClient {
   const url = supabaseUrl();
   const key = supabaseSecretKey();
   if (!url || !key) {
@@ -223,4 +256,60 @@ export function supabasePublic(): SupabaseClient {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: supabaseFetch("public") },
   });
+}
+
+export type SupabaseEnvReport = {
+  urlSet: boolean;
+  urlValid: boolean;
+  urlHost: string;
+  anonKey: KeyKind;
+  serviceKey: KeyKind;
+  readOnlyRuntime: boolean;
+};
+
+/** Env-only snapshot (no network, no secrets). */
+export function supabaseEnvReport(): SupabaseEnvReport {
+  const raw = supabaseUrlRaw();
+  const valid = isValidSupabaseProjectUrl(raw);
+  return {
+    urlSet: Boolean(raw),
+    urlValid: valid,
+    urlHost: valid ? raw.replace(/^https:\/\//, "") : "",
+    anonKey: classifyKey(supabaseAnonKey()),
+    serviceKey: classifyKey(supabaseSecretKey()),
+    readOnlyRuntime: isReadOnlyRuntime(),
+  };
+}
+
+/**
+ * Why admin writes cannot reach Supabase right now, or null when they can.
+ * No URL on a writable local disk is allowed (JSON file mode) — never on Vercel.
+ */
+export function supabaseWriteBlocker(): AdminErrorCode | null {
+  const env = supabaseEnvReport();
+  if (!env.urlSet) return env.readOnlyRuntime ? "no_url" : null;
+  if (!env.urlValid) return "bad_url";
+  if (env.serviceKey === "none") return "no_key";
+  if (env.serviceKey === "anon") return "wrong_key";
+  return null;
+}
+
+/** Public reads that must not be cached when they fail: throws instead of returning a fallback. */
+export async function withTimeout<T>(work: PromiseLike<T>, ms = SUPABASE_FETCH_MS + 400): Promise<T> {
+  if (supabaseUnreachable()) throw unreachableError();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = reachable === true ? ms : Math.min(ms, SUPABASE_CONNECT_MS + 400);
+  try {
+    return await Promise.race([
+      Promise.resolve(work),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("supabase timeout")), budget);
+      }),
+    ]);
+  } catch (error) {
+    if (reachable !== true && isNetworkFailure(error)) markUnreachable();
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

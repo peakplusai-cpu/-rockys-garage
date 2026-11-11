@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { deleteCar, updateCar } from "@/app/actions/cars";
 import { CarForm } from "@/components/CarForm";
+import { adminErrorMessage, attempt } from "@/lib/admin-errors";
 import { requireDeskAuth } from "@/lib/auth";
 import { getAdminCar } from "@/lib/store";
 
@@ -9,7 +10,18 @@ export const dynamic = "force-dynamic";
 export default async function EditCarPage({ params }: { params: Promise<{ id: string }> }) {
   await requireDeskAuth();
   const { id } = await params;
-  const car = await getAdminCar(id);
+  const { data: car, error } = await attempt(() => getAdminCar(id), null);
+  if (error) {
+    return (
+      <>
+        <p className="engraved">Edit</p>
+        <h1>讀取失敗</h1>
+        <p className="flash" role="alert">
+          {adminErrorMessage(error.code, error.detail)}
+        </p>
+      </>
+    );
+  }
   if (!car) notFound();
 
   return (

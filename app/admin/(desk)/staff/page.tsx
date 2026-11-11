@@ -1,4 +1,5 @@
 import { deleteStaff, upsertStaff } from "@/app/actions/staff";
+import { adminErrorMessage, attempt } from "@/lib/admin-errors";
 import { requireDeskAuth } from "@/lib/auth";
 import { listAdminStaff } from "@/lib/store";
 
@@ -7,11 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function StaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ bound?: string; error?: string }>;
+  searchParams: Promise<{ bound?: string; error?: string; saved?: string }>;
 }) {
   await requireDeskAuth();
-  const { bound, error } = await searchParams;
-  const staff = await listAdminStaff();
+  const { bound, error, saved } = await searchParams;
+  const { data: staff, error: readError } = await attempt(() => listAdminStaff(), []);
 
   return (
     <>
@@ -23,8 +24,15 @@ export default async function StaffPage({
         加好友並進入聊天室；電腦瀏覽器仍會顯示 QR，那是 LINE 網頁本身的限制。
       </p>
       {bound ? <p className="flash">LINE 聯絡資料已更新。</p> : null}
-      {error ? <p className="flash">LINE 聯絡資料未完成，請確認官方帳號 ID 或網址。</p> : null}
-      {!staff.length ? (
+      {saved ? <p className="flash">已儲存（資料庫已確認寫入）。</p> : null}
+      {error === "line" ? <p className="flash">LINE 聯絡資料未完成，請確認官方帳號 ID 或網址。</p> : null}
+      {error && error !== "line" ? <p className="flash" role="alert">{adminErrorMessage(error)}</p> : null}
+      {readError ? (
+        <p className="flash" role="alert">
+          讀不到顧問資料。{adminErrorMessage(readError.code, readError.detail)}
+        </p>
+      ) : null}
+      {!staff.length && !readError ? (
         <p className="empty-line">尚未設定任何真實業務 LINE。新增後才會公開顯示。</p>
       ) : null}
 

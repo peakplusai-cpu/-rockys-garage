@@ -1,20 +1,23 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { unstable_cache } from "next/cache";
 import { dirname, join } from "path";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { AdminDbError, classifyDbError } from "./admin-errors";
 import { parseBodyType, parseDoors } from "./catalog";
 import type { Admin, Car, SpecRow, Staff, Store } from "./types";
 import { seedStore } from "./seed";
 import { isAuthenticated } from "./session";
 import {
   PUBLIC_DATA_TAG,
-  failSoft,
   isReadOnlyRuntime,
+  logSupabasePublic,
   supabaseAdmin,
   supabaseAdminConfigured,
   supabaseAnonConfigured,
   supabaseConfigured,
   supabasePublic,
-  logSupabasePublic,
+  supabaseWriteBlocker,
+  withTimeout,
 } from "./supabase";
 export { uid } from "./id";
 
@@ -25,15 +28,16 @@ function emptyStore(): Store {
   return { admin: null, staff: [], cars: [], sessions: [] };
 }
 
+/** Local-file mode only. Throws instead of silently dropping the write. */
 function persistJson(store: Store): void {
-  if (isReadOnlyRuntime()) return;
+  if (isReadOnlyRuntime()) throw new AdminDbError("no_url");
   try {
     mkdirSync(dirname(STORE_PATH), { recursive: true });
     const tmp = `${STORE_PATH}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, JSON.stringify(store, null, 2), "utf8");
     renameSync(tmp, STORE_PATH);
   } catch (error) {
-    console.error("json store persist skipped", error);
+    throw new AdminDbError("db", error instanceof Error ? error.message : "local file write failed");
   }
 }
 
@@ -75,6 +79,20 @@ function rowToStaff(row: Record<string, unknown>): Staff {
     lineUserId: String(row.line_user_id ?? ""),
     sortOrder: Number(row.sort_order ?? 0),
     createdAt: String(row.created_at ?? ""),
+  };
+}
+
+function staffRow(person: Staff) {
+  return {
+    id: person.id,
+    display_name: person.displayName,
+    role: person.role,
+    line_url: person.lineUrl,
+    line_id: person.lineId,
+    note: person.note,
+    line_user_id: person.lineUserId,
+    sort_order: person.sortOrder,
+    created_at: person.createdAt || new Date().toISOString(),
   };
 }
 
@@ -129,262 +147,6 @@ function rowToCar(row: Record<string, unknown>): Car {
   return normalizeCar(row);
 }
 
-async function getSupabaseStore(): Promise<Store> {
-  const db = supabaseAdmin();
-  const results = await failSoft(
-    Promise.all([
-      db.from("rocky_admin").select("*").eq("id", 1).maybeSingle(),
-      db.from("rocky_staff").select("*").order("sort_order"),
-      db.from("rocky_cars").select("*").order("created_at", { ascending: false }),
-    ]),
-    null
-  );
-  if (!results) throw new Error("資料庫連線逾時，請再試一次。");
-  const [adminRes, staffRes, carsRes] = results;
-  if (carsRes.error) throw new Error(carsRes.error.message || "讀取車輛失敗");
-  if (staffRes.error) console.error("supabase staff", staffRes.error);
-  if (adminRes.error) console.error("supabase admin", adminRes.error);
-  const adminRow = adminRes.data as { password_hash: string; created_at: string } | null;
-  const admin: Admin | null = adminRow
-    ? { passwordHash: adminRow.password_hash, createdAt: adminRow.created_at }
-    : null;
-  return {
-    admin,
-    staff: (staffRes.data ?? []).map((row) => rowToStaff(row as Record<string, unknown>)),
-    cars: (carsRes.data ?? []).map((row) => rowToCar(row as Record<string, unknown>)),
-    sessions: [],
-  };
-}
-
-async function saveSupabaseStore(store: Store): Promise<void> {
-  const db = supabaseAdmin();
-  if (store.admin) {
-    const { error } = await db.from("rocky_admin").upsert({
-      id: 1,
-      password_hash: store.admin.passwordHash,
-      created_at: store.admin.createdAt,
-    });
-    if (error) throw error;
-  }
-  if (store.staff.length) {
-    const { error: staffErr } = await db.from("rocky_staff").upsert(
-      store.staff.map((person) => ({
-        id: person.id,
-        display_name: person.displayName,
-        role: person.role,
-        line_url: person.lineUrl,
-        line_id: person.lineId,
-        note: person.note,
-        line_user_id: person.lineUserId,
-        sort_order: person.sortOrder,
-        created_at: person.createdAt,
-      }))
-    );
-    if (staffErr) throw staffErr;
-  }
-  const remoteStaff = await db.from("rocky_staff").select("id");
-  const keepStaff = new Set(store.staff.map((s) => s.id));
-  const extraStaff = (remoteStaff.data ?? []).map((r) => r.id).filter((id) => !keepStaff.has(id));
-  if (extraStaff.length) await db.from("rocky_staff").delete().in("id", extraStaff);
-
-  const { error: carsErr } = await db.from("rocky_cars").upsert(
-    store.cars.map((car) => ({
-      id: car.id,
-      slug: car.slug,
-      make: car.make,
-      make_en: car.makeEn,
-      model: car.model,
-      year: car.year,
-      price: car.price,
-      mileage: car.mileage,
-      color: car.color,
-      interior: car.interior,
-      engine: car.engine,
-      horsepower: car.horsepower,
-      transmission: car.transmission,
-      drivetrain: car.drivetrain,
-      doors: car.doors,
-      body_type: car.bodyType,
-      displacement: car.displacement,
-      options: car.options,
-      specs: car.specs,
-      equipment: car.equipment,
-      story: car.story,
-      status: car.status,
-      published: car.published,
-      featured: car.featured,
-      photos: car.photos,
-      created_at: car.createdAt,
-      updated_at: car.updatedAt,
-    }))
-  );
-  if (carsErr) throw carsErr;
-  const remoteCars = await db.from("rocky_cars").select("id");
-  const keepCars = new Set(store.cars.map((c) => c.id));
-  const extraCars = (remoteCars.data ?? []).map((r) => r.id).filter((id) => !keepCars.has(id));
-  if (extraCars.length) await db.from("rocky_cars").delete().in("id", extraCars);
-}
-
-export async function getStore(): Promise<Store> {
-  if (supabaseConfigured()) {
-    try {
-      if (supabaseAdminConfigured()) return await getSupabaseStore();
-      const [published, staff] = await Promise.all([listPublishedCars(), listPublicStaff()]);
-      return { admin: null, staff, cars: published, sessions: [] };
-    } catch (error) {
-      console.error("supabase getStore", error);
-      throw error;
-    }
-  }
-  return getJsonStore();
-}
-
-const cachedPublishedCars = unstable_cache(
-  async () => {
-    try {
-      if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Car[];
-      return await failSoft(
-        supabasePublic()
-          .from("rocky_cars")
-          .select("*")
-          .eq("published", true)
-          .order("created_at", { ascending: false })
-          .then(({ data, error }) => {
-            if (error) {
-              logSupabasePublic("listPublishedCars", error);
-              return [] as Car[];
-            }
-            return (data ?? []).map((row) => rowToCar(row as Record<string, unknown>));
-          }),
-        [] as Car[]
-      );
-    } catch (error) {
-      logSupabasePublic("listPublishedCars", error);
-      return [] as Car[];
-    }
-  },
-  ["rocky-published-cars"],
-  { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
-);
-
-const cachedPublicStaff = unstable_cache(
-  async () => {
-    try {
-      if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Staff[];
-      return await failSoft(
-        supabasePublic()
-          .from("rocky_staff")
-          .select("*")
-          .order("sort_order")
-          .then(({ data, error }) => {
-            if (error) {
-              logSupabasePublic("listPublicStaff", error);
-              return [] as Staff[];
-            }
-            return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
-          }),
-        [] as Staff[]
-      );
-    } catch (error) {
-      logSupabasePublic("listPublicStaff", error);
-      return [] as Staff[];
-    }
-  },
-  ["rocky-public-staff"],
-  { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
-);
-
-export async function listPublishedCars(): Promise<Car[]> {
-  if (supabaseConfigured()) return cachedPublishedCars();
-  return getJsonStore().cars.filter((car) => car.published);
-}
-
-export async function getPublishedCar(slug: string): Promise<Car | null> {
-  return (await listPublishedCars()).find((car) => car.slug === slug) ?? null;
-}
-
-export async function listPublicStaff(): Promise<Staff[]> {
-  if (supabaseConfigured()) return cachedPublicStaff();
-  return [...getJsonStore().staff].sort((a, b) => a.sortOrder - b.sortOrder);
-}
-
-const WRITE_MS = 12000;
-
-/** List columns omit photos JSON so desk counts/tables do not pull the full inventory blob. */
-const ADMIN_CAR_LIST_COLUMNS =
-  "id,slug,make,make_en,model,year,price,mileage,color,interior,engine,horsepower,transmission,drivetrain,doors,body_type,displacement,options,specs,equipment,story,status,published,featured,created_at,updated_at";
-
-export async function listAdminCars(): Promise<Car[]> {
-  if (!(await isAuthenticated())) return [];
-  if (!supabaseConfigured()) return getJsonStore().cars;
-  if (!supabaseAdminConfigured()) return failSoft(listPublishedCars(), [] as Car[]);
-  const db = supabaseAdmin();
-  return failSoft(
-    db
-      .from("rocky_cars")
-      .select(ADMIN_CAR_LIST_COLUMNS)
-      .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("supabase listAdminCars", error);
-          return [] as Car[];
-        }
-        return (data ?? []).map((row) => rowToCar(row as Record<string, unknown>));
-      }),
-    [] as Car[]
-  );
-}
-
-export async function listAdminStaff(): Promise<Staff[]> {
-  if (!(await isAuthenticated())) return [];
-  if (!supabaseConfigured()) {
-    return [...getJsonStore().staff].sort((a, b) => a.sortOrder - b.sortOrder);
-  }
-  if (!supabaseAdminConfigured()) return failSoft(listPublicStaff(), [] as Staff[]);
-  const db = supabaseAdmin();
-  return failSoft(
-    db
-      .from("rocky_staff")
-      .select("*")
-      .order("sort_order")
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("supabase listAdminStaff", error);
-          return [] as Staff[];
-        }
-        return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
-      }),
-    [] as Staff[]
-  );
-}
-
-export async function getAdminCar(id: string): Promise<Car | null> {
-  if (!(await isAuthenticated())) return null;
-  if (!supabaseConfigured()) {
-    return getJsonStore().cars.find((car) => car.id === id) ?? null;
-  }
-  if (!supabaseAdminConfigured()) {
-    const published = await listPublishedCars();
-    return published.find((car) => car.id === id) ?? null;
-  }
-  const db = supabaseAdmin();
-  return failSoft(
-    db
-      .from("rocky_cars")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("supabase getAdminCar", error);
-          return null;
-        }
-        return data ? rowToCar(data as Record<string, unknown>) : null;
-      }),
-    null
-  );
-}
-
 function carRow(car: Car) {
   return {
     id: car.id,
@@ -417,44 +179,253 @@ function carRow(car: Car) {
   };
 }
 
-/** Insert one car. Does not read or rewrite the rest of the inventory. */
-export async function insertCar(car: Car): Promise<void> {
-  if (!supabaseConfigured()) {
+/* ------------------------------------------------------------------ */
+/* Public reads: fail-soft, but a failed read is never cached.         */
+/* ------------------------------------------------------------------ */
+
+const cachedPublishedCars = unstable_cache(
+  async () => {
+    if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Car[];
+    const { data, error } = await withTimeout(
+      supabasePublic()
+        .from("rocky_cars")
+        .select("*")
+        .eq("published", true)
+        .order("created_at", { ascending: false })
+    );
+    if (error) throw error;
+    return (data ?? []).map((row) => rowToCar(row as Record<string, unknown>));
+  },
+  ["rocky-published-cars"],
+  { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
+);
+
+const cachedPublicStaff = unstable_cache(
+  async () => {
+    if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Staff[];
+    const { data, error } = await withTimeout(
+      supabasePublic().from("rocky_staff").select("*").order("sort_order")
+    );
+    if (error) throw error;
+    return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
+  },
+  ["rocky-public-staff"],
+  { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
+);
+
+export async function listPublishedCars(): Promise<Car[]> {
+  if (!supabaseConfigured()) return getJsonStore().cars.filter((car) => car.published);
+  try {
+    return await cachedPublishedCars();
+  } catch (error) {
+    logSupabasePublic("listPublishedCars", error);
+    return [];
+  }
+}
+
+export async function getPublishedCar(slug: string): Promise<Car | null> {
+  return (await listPublishedCars()).find((car) => car.slug === slug) ?? null;
+}
+
+export async function listPublicStaff(): Promise<Staff[]> {
+  if (!supabaseConfigured()) return [...getJsonStore().staff].sort((a, b) => a.sortOrder - b.sortOrder);
+  try {
+    return await cachedPublicStaff();
+  } catch (error) {
+    logSupabasePublic("listPublicStaff", error);
+    return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin reads/writes: strict. Every failure throws an AdminDbError.   */
+/* ------------------------------------------------------------------ */
+
+type Target = { kind: "supabase"; db: SupabaseClient } | { kind: "json" };
+
+function adminTarget(): Target {
+  const blocker = supabaseWriteBlocker();
+  if (blocker) throw new AdminDbError(blocker);
+  if (supabaseConfigured()) return { kind: "supabase", db: supabaseAdmin() };
+  return { kind: "json" };
+}
+
+type DbResult<T> = { data: T | null; error: { message: string; code?: string } | null };
+
+async function run<T>(work: PromiseLike<DbResult<T>>): Promise<T | null> {
+  let res: DbResult<T>;
+  try {
+    res = await work;
+  } catch (error) {
+    throw classifyDbError(error);
+  }
+  if (res.error) throw classifyDbError(res.error);
+  return res.data;
+}
+
+/** A write that touched no rows did not persist (RLS or wrong key can do this silently). */
+function mustHaveRows(data: unknown[] | null): void {
+  if (!data || data.length === 0) throw new AdminDbError("empty");
+}
+
+const ADMIN_CAR_LIST_COLUMNS =
+  "id,slug,make,make_en,model,year,price,mileage,color,interior,engine,horsepower,transmission,drivetrain,doors,body_type,displacement,options,specs,equipment,story,status,published,featured,created_at,updated_at";
+
+export async function listAdminCars(): Promise<Car[]> {
+  if (!(await isAuthenticated())) return [];
+  const target = adminTarget();
+  if (target.kind === "json") return getJsonStore().cars;
+  const data = await run<Record<string, unknown>[]>(
+    target.db.from("rocky_cars").select(ADMIN_CAR_LIST_COLUMNS).order("created_at", { ascending: false })
+  );
+  return (data ?? []).map(rowToCar);
+}
+
+export async function listAdminStaff(): Promise<Staff[]> {
+  if (!(await isAuthenticated())) return [];
+  const target = adminTarget();
+  if (target.kind === "json") return [...getJsonStore().staff].sort((a, b) => a.sortOrder - b.sortOrder);
+  const data = await run<Record<string, unknown>[]>(
+    target.db.from("rocky_staff").select("*").order("sort_order")
+  );
+  return (data ?? []).map(rowToStaff);
+}
+
+export async function getAdminCar(id: string): Promise<Car | null> {
+  if (!(await isAuthenticated())) return null;
+  const target = adminTarget();
+  if (target.kind === "json") return getJsonStore().cars.find((car) => car.id === id) ?? null;
+  const data = await run<Record<string, unknown>>(
+    target.db.from("rocky_cars").select("*").eq("id", id).maybeSingle()
+  );
+  return data ? rowToCar(data) : null;
+}
+
+export async function getAdminRecord(): Promise<Admin | null> {
+  const target = adminTarget();
+  if (target.kind === "json") return getJsonStore().admin;
+  const data = await run<{ password_hash: string; created_at: string }>(
+    target.db.from("rocky_admin").select("*").eq("id", 1).maybeSingle()
+  );
+  return data ? { passwordHash: data.password_hash, createdAt: data.created_at } : null;
+}
+
+export async function saveAdminRecord(admin: Admin): Promise<void> {
+  const target = adminTarget();
+  if (target.kind === "json") {
     const store = getJsonStore();
-    store.cars.unshift(car);
+    store.admin = admin;
     jsonCache = store;
     persistJson(store);
     return;
   }
-  if (!supabaseAdminConfigured()) {
-    throw new Error("後台寫入需要 SUPABASE_SERVICE_ROLE_KEY");
-  }
-  const db = supabaseAdmin(WRITE_MS);
-  try {
-    let row = carRow(car);
-    let { error } = await db.from("rocky_cars").insert(row);
-    if (error?.code === "23505") {
-      row = { ...row, slug: `${car.slug}-${Date.now().toString(36)}` };
-      ({ error } = await db.from("rocky_cars").insert(row));
-    }
-    if (error) throw new Error(error.message || "新增車輛失敗");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/unreachable|fetch failed|ENOTFOUND|aborted|timeout/i.test(message)) {
-      throw new Error("資料庫連不到。請在 Vercel 設定 Rocky's Garage 的 NEXT_PUBLIC_SUPABASE_URL 與 SUPABASE_SERVICE_ROLE_KEY 後 Redeploy。");
-    }
-    throw error;
-  }
+  const data = await run<{ id: number }[]>(
+    target.db
+      .from("rocky_admin")
+      .upsert({ id: 1, password_hash: admin.passwordHash, created_at: admin.createdAt })
+      .select("id")
+  );
+  mustHaveRows(data);
 }
 
-export async function saveStore(store: Store): Promise<void> {
-  if (supabaseAdminConfigured()) {
-    await saveSupabaseStore(store);
+/** Insert or update one car. Returns the car as stored (slug may get a suffix on conflict). */
+export async function saveCar(car: Car, mode: "create" | "update"): Promise<Car> {
+  const target = adminTarget();
+  if (target.kind === "json") {
+    const store = getJsonStore();
+    let slug = car.slug;
+    if (store.cars.some((item) => item.slug === slug && item.id !== car.id)) {
+      slug = `${slug}-${Date.now().toString(36)}`;
+    }
+    const next = { ...car, slug };
+    const index = store.cars.findIndex((item) => item.id === car.id);
+    if (index >= 0) store.cars[index] = next;
+    else store.cars.unshift(next);
+    jsonCache = store;
+    persistJson(store);
+    return next;
+  }
+
+  let row = carRow(car);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let res: { data: { id: string; slug: string }[] | null; error: { message: string; code?: string } | null };
+    try {
+      const table = target.db.from("rocky_cars");
+      res = await (mode === "create"
+        ? table.insert(row).select("id,slug")
+        : table.upsert(row, { onConflict: "id" }).select("id,slug"));
+    } catch (error) {
+      throw classifyDbError(error);
+    }
+    if (res.error?.code === "23505" && attempt === 0) {
+      row = { ...row, slug: `${car.slug}-${Date.now().toString(36)}` };
+      continue;
+    }
+    if (res.error) throw classifyDbError(res.error);
+    mustHaveRows(res.data);
+    return { ...car, slug: res.data![0].slug };
+  }
+  throw new AdminDbError("db", "slug conflict");
+}
+
+/** Returns the car slug (for revalidation), or null when a local-file car does not exist. */
+export async function setCarPublished(id: string, published: boolean): Promise<string | null> {
+  const target = adminTarget();
+  const updatedAt = new Date().toISOString();
+  if (target.kind === "json") {
+    const store = getJsonStore();
+    const car = store.cars.find((item) => item.id === id);
+    if (!car) return null;
+    car.published = published;
+    car.updatedAt = updatedAt;
+    jsonCache = store;
+    persistJson(store);
+    return car.slug;
+  }
+  const data = await run<{ id: string; slug: string }[]>(
+    target.db.from("rocky_cars").update({ published, updated_at: updatedAt }).eq("id", id).select("id,slug")
+  );
+  mustHaveRows(data);
+  return data![0].slug;
+}
+
+export async function removeCar(id: string): Promise<void> {
+  const target = adminTarget();
+  if (target.kind === "json") {
+    const store = getJsonStore();
+    store.cars = store.cars.filter((car) => car.id !== id);
+    jsonCache = store;
+    persistJson(store);
     return;
   }
-  if (supabaseConfigured()) {
-    throw new Error("Admin writes need SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY");
+  await run(target.db.from("rocky_cars").delete().eq("id", id));
+}
+
+export async function saveStaff(person: Staff): Promise<void> {
+  const target = adminTarget();
+  if (target.kind === "json") {
+    const store = getJsonStore();
+    const index = store.staff.findIndex((item) => item.id === person.id);
+    if (index >= 0) store.staff[index] = person;
+    else store.staff.push(person);
+    jsonCache = store;
+    persistJson(store);
+    return;
   }
-  jsonCache = store;
-  persistJson(store);
+  const data = await run<{ id: string }[]>(
+    target.db.from("rocky_staff").upsert(staffRow(person), { onConflict: "id" }).select("id")
+  );
+  mustHaveRows(data);
+}
+
+export async function removeStaff(id: string): Promise<void> {
+  const target = adminTarget();
+  if (target.kind === "json") {
+    const store = getJsonStore();
+    store.staff = store.staff.filter((person) => person.id !== id);
+    jsonCache = store;
+    persistJson(store);
+    return;
+  }
+  await run(target.db.from("rocky_staff").delete().eq("id", id));
 }
