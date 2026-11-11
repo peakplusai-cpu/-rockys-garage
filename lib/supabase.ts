@@ -1,5 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+/** Must match hosted Supabase projects — rejects Vercel URLs and typos early. */
+const SUPABASE_PROJECT_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i;
+
 /** Abort hung PostgREST calls instead of waiting for the ~14s platform timeout. */
 export const SUPABASE_FETCH_MS = 2000;
 /** First contact / NXDOMAIN / connect: do not wait out resolver or 12s write budget. */
@@ -51,6 +54,21 @@ function isNetworkFailure(error: unknown): boolean {
 
 const unreachableError = () => new Error("supabase unreachable");
 
+function isHtmlContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase();
+  return ct.includes("text/html") || ct.includes("application/xhtml");
+}
+
+/** One-line public read errors — never log HTML bodies. */
+export function logSupabasePublic(scope: string, error: unknown): void {
+  const raw = error instanceof Error ? error.message : String(error ?? "unknown");
+  if (/<!doctype|<html/i.test(raw) || raw.length > 160) {
+    console.error(`supabase ${scope}: non-json response (check NEXT_PUBLIC_SUPABASE_URL and rocky_* tables)`);
+    return;
+  }
+  console.error(`supabase ${scope}:`, raw.slice(0, 160));
+}
+
 function supabaseFetch(kind: "public" | "admin", timeoutMs = SUPABASE_FETCH_MS): typeof fetch {
   return (input, init) => {
     if (supabaseUnreachable()) return Promise.reject(unreachableError());
@@ -73,11 +91,19 @@ function supabaseFetch(kind: "public" | "admin", timeoutMs = SUPABASE_FETCH_MS):
       signal: controller.signal,
     } as RequestInit)
       .then((res) => {
+        const ct = res.headers.get("content-type") || "";
+        if (isHtmlContentType(ct)) {
+          markUnreachable();
+          throw new Error("supabase html response");
+        }
         markReachable();
         return res;
       })
       .catch((error) => {
         if (reachable !== true && isNetworkFailure(error)) markUnreachable();
+        if (reachable !== true && error instanceof Error && error.message === "supabase html response") {
+          markUnreachable();
+        }
         throw error;
       })
       .finally(() => clearTimeout(timer));
@@ -97,7 +123,8 @@ export async function failSoft<T>(work: PromiseLike<T>, fallback: T, ms = SUPABA
     ]);
   } catch (error) {
     if (reachable !== true && isNetworkFailure(error)) markUnreachable();
-    console.error("supabase fail-soft", error);
+    if (error instanceof Error && error.message === "supabase html response") markUnreachable();
+    logSupabasePublic("fail-soft", error);
     return fallback;
   } finally {
     if (timer) clearTimeout(timer);
@@ -117,8 +144,21 @@ export function isReadOnlyRuntime(): boolean {
   return Boolean(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 }
 
-export function supabaseUrl(): string {
+export function supabaseUrlRaw(): string {
   return firstEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL").replace(/\/$/, "");
+}
+
+export function isValidSupabaseProjectUrl(url: string): boolean {
+  return Boolean(url && SUPABASE_PROJECT_URL.test(url));
+}
+
+export function supabaseUrl(): string {
+  const raw = supabaseUrlRaw();
+  if (!isValidSupabaseProjectUrl(raw)) {
+    if (raw) logSupabasePublic("config", "ignored invalid NEXT_PUBLIC_SUPABASE_URL");
+    return "";
+  }
+  return raw;
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   supabaseAnonConfigured,
   supabaseConfigured,
   supabasePublic,
+  logSupabasePublic,
 } from "./supabase";
 export { uid } from "./id";
 
@@ -240,22 +241,27 @@ export async function getStore(): Promise<Store> {
 
 const cachedPublishedCars = unstable_cache(
   async () => {
-    if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Car[];
-    return failSoft(
-      supabasePublic()
-        .from("rocky_cars")
-        .select("*")
-        .eq("published", true)
-        .order("created_at", { ascending: false })
-        .then(({ data, error }) => {
-          if (error) {
-            console.error("supabase listPublishedCars", error);
-            return [] as Car[];
-          }
-          return (data ?? []).map((row) => rowToCar(row as Record<string, unknown>));
-        }),
-      [] as Car[]
-    );
+    try {
+      if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Car[];
+      return await failSoft(
+        supabasePublic()
+          .from("rocky_cars")
+          .select("*")
+          .eq("published", true)
+          .order("created_at", { ascending: false })
+          .then(({ data, error }) => {
+            if (error) {
+              logSupabasePublic("listPublishedCars", error);
+              return [] as Car[];
+            }
+            return (data ?? []).map((row) => rowToCar(row as Record<string, unknown>));
+          }),
+        [] as Car[]
+      );
+    } catch (error) {
+      logSupabasePublic("listPublishedCars", error);
+      return [] as Car[];
+    }
   },
   ["rocky-published-cars"],
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
@@ -263,21 +269,26 @@ const cachedPublishedCars = unstable_cache(
 
 const cachedPublicStaff = unstable_cache(
   async () => {
-    if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Staff[];
-    return failSoft(
-      supabasePublic()
-        .from("rocky_staff")
-        .select("*")
-        .order("sort_order")
-        .then(({ data, error }) => {
-          if (error) {
-            console.error("supabase listPublicStaff", error);
-            return [] as Staff[];
-          }
-          return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
-        }),
-      [] as Staff[]
-    );
+    try {
+      if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Staff[];
+      return await failSoft(
+        supabasePublic()
+          .from("rocky_staff")
+          .select("*")
+          .order("sort_order")
+          .then(({ data, error }) => {
+            if (error) {
+              logSupabasePublic("listPublicStaff", error);
+              return [] as Staff[];
+            }
+            return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
+          }),
+        [] as Staff[]
+      );
+    } catch (error) {
+      logSupabasePublic("listPublicStaff", error);
+      return [] as Staff[];
+    }
   },
   ["rocky-public-staff"],
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }

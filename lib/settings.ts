@@ -146,35 +146,37 @@ function normalize(partial: Partial<SiteSettings> & { instagram?: string }): Sit
 
 const cachedRemoteSettings = unstable_cache(
   async (): Promise<SiteSettings> => {
-    if (!supabaseAnonConfigured() && !supabaseAdminConfigured()) return defaultSettings();
-    const row = await failSoft(
-      supabasePublic()
-        .from("rocky_site_settings")
-        .select("*")
-        .eq("id", 1)
-        .maybeSingle()
-        .then(({ data, error }) => {
-          if (error || !data) return null;
-          return data as {
-            instagram?: string;
-            line_url?: string;
-            instagram_url?: string;
-            featured_video_url?: string;
-            featured_video_caption?: string;
-          };
-        }),
-      null
-    );
-    // Throw so a timed-out read is not cached as "no videos". The homepage then
-    // keeps the previous page instead of flashing an empty row.
-    if (!row) throw new Error("settings unavailable");
-    return normalize({
-      lineUrl: row.line_url,
-      instagramUrl: row.instagram_url,
-      instagram: row.instagram,
-      featuredVideoUrl: row.featured_video_url,
-      featuredVideoCaption: row.featured_video_caption,
-    });
+    try {
+      if (!supabaseAnonConfigured() && !supabaseAdminConfigured()) return defaultSettings();
+      const row = await failSoft(
+        supabasePublic()
+          .from("rocky_site_settings")
+          .select("*")
+          .eq("id", 1)
+          .maybeSingle()
+          .then(({ data, error }) => {
+            if (error || !data) return null;
+            return data as {
+              instagram?: string;
+              line_url?: string;
+              instagram_url?: string;
+              featured_video_url?: string;
+              featured_video_caption?: string;
+            };
+          }),
+        null
+      );
+      if (!row) return defaultSettings();
+      return normalize({
+        lineUrl: row.line_url,
+        instagramUrl: row.instagram_url,
+        instagram: row.instagram,
+        featuredVideoUrl: row.featured_video_url,
+        featuredVideoCaption: row.featured_video_caption,
+      });
+    } catch {
+      return defaultSettings();
+    }
   },
   ["rocky-public-settings"],
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
@@ -182,7 +184,11 @@ const cachedRemoteSettings = unstable_cache(
 
 export async function getSettings(): Promise<SiteSettings> {
   if (supabaseConfigured()) {
-    return cachedRemoteSettings();
+    try {
+      return await cachedRemoteSettings();
+    } catch {
+      return defaultSettings();
+    }
   }
   if (isReadOnlyRuntime()) return defaultSettings();
   try {
