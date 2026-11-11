@@ -1,0 +1,23 @@
+{
+  "name": "rockys-garage",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "seed:supabase": "node scripts/seed-supabase.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "next": "^15.5.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.3"
+  }
+}

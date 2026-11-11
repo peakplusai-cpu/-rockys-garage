@@ -1,0 +1,331 @@
+/* Rocky's Garage — dark grid + amber display (distinct from Anson light / Atelier void) */
+
+:root {
+  --paper: #070707;
+  --ink: #f4f0e6;
+  --line: rgba(255, 255, 255, 0.88);
+  --line-soft: rgba(255, 255, 255, 0.22);
+  --hair: rgba(255, 255, 255, 0.14);
+  --surface: #101010;
+  --muted: #9a9488;
+  --accent: #ffb020;
+  --accent-hot: #ff8c00;
+  --line-green: #06c755;
+  --radius: 4px;
+  --pad: clamp(18px, 4vw, 72px);
+  --display: "Anton", "Barlow Condensed", "Noto Sans TC", sans-serif;
+  --ui: "Noto Sans TC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 120% 80% at 50% 0%, #000 40%, transparent 100%);
+}
+
+::selection {
+  background: var(--accent);
+  color: #0a0a0a;
+}
+
+.engraved {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.engraved::before {
+  content: "+";
+  color: var(--accent);
+  margin-right: 0.55em;
+}
+
+.site-header {
+  position: sticky;
+  background: rgba(7, 7, 7, 0.82);
+  border-bottom: 1px solid var(--hair);
+  mix-blend-mode: normal;
+}
+
+.wordmark {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.wordmark-en {
+  font-family: var(--display);
+  font-size: clamp(18px, 2.4vw, 26px);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.wordmark-zh {
+  font-family: var(--ui);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--ink);
+}
+
+.wordmark-zh::before {
+  display: none;
+}
+
+.nav a:hover {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.nav a.nav-cta {
+  background: var(--accent);
+  color: #0a0a0a;
+  border: 1px solid var(--accent);
+}
+
+.nav a.nav-cta:hover {
+  background: var(--accent-hot);
+  border-color: var(--accent-hot);
+}
+
+/* Hero */
+.rocky-hero {
+  position: relative;
+  min-height: min(88svh, 820px);
+  display: grid;
+  align-items: end;
+  padding: 120px var(--pad) 64px;
+  border-bottom: 1px solid var(--hair);
+  overflow: hidden;
+}
+
+.rocky-hero-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, transparent 48%, rgba(255, 176, 32, 0.08) 49%, rgba(255, 176, 32, 0.08) 51%, transparent 52%),
+    linear-gradient(to right, var(--hair) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hair) 1px, transparent 1px);
+  background-size: 100% 100%, 72px 72px, 72px 72px;
+  opacity: 0.9;
+}
+
+.rocky-hero-frame {
+  position: relative;
+  z-index: 1;
+  max-width: 920px;
+}
+
+.rocky-display {
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rocky-display-en {
+  font-family: var(--display);
+  font-size: clamp(56px, 14vw, 156px);
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.rocky-display-zh {
+  font-family: var(--ui);
+  font-size: clamp(22px, 4vw, 36px);
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: var(--accent);
+}
+
+.rocky-lead {
+  max-width: 42ch;
+  font-size: clamp(15px, 1.5vw, 18px);
+  line-height: 1.75;
+  margin: 24px 0 28px;
+  color: var(--muted);
+}
+
+.rocky-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+}
+
+.rocky-tags li {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border: 1px solid var(--line-soft);
+  color: var(--ink);
+}
+
+.btn-amber {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0a;
+}
+
+.btn-amber:hover {
+  background: var(--accent-hot);
+  border-color: var(--accent-hot);
+  color: #0a0a0a;
+}
+
+.btn {
+  border-radius: var(--radius);
+}
+
+.btn-ghost {
+  color: var(--ink);
+  border-color: var(--line-soft);
+}
+
+.btn-ghost:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Marquee */
+.rocky-marquee {
+  overflow: hidden;
+  border-bottom: 1px solid var(--hair);
+  padding: 14px 0;
+  background: var(--surface);
+}
+
+.rocky-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 48px;
+  animation: rocky-ticker 28s linear infinite;
+}
+
+.rocky-marquee-item {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+@keyframes rocky-ticker {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Inventory */
+.filter-bar,
+.section,
+.reel-section,
+.site-footer {
+  background: transparent;
+}
+
+.filter-bar {
+  border-bottom: 1px solid var(--hair);
+}
+
+.filter-bar h2,
+.section h2,
+.reel-section h2 {
+  font-family: var(--display);
+  font-size: clamp(32px, 6vw, 52px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.filter-row button {
+  border-radius: var(--radius);
+  border: 1px solid var(--hair);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.filter-row button[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0a;
+}
+
+.grid .card {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.grid .card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.card-price {
+  color: var(--accent);
+}
+
+.site-footer {
+  border-top: 1px solid var(--hair);
+}
+
+.staff-list li {
+  border-color: var(--hair);
+}
+
+.colophon {
+  border-color: var(--hair);
+  color: var(--muted);
+}
+
+/* Detail & inquiry pages */
+.detail-hero,
+.inquiry-shell,
+.gate {
+  background: var(--paper);
+}
+
+.admin-shell {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.admin-side {
+  border-color: var(--hair);
+  background: var(--surface);
+}
+
+.admin-side a[data-active="true"] {
+  color: var(--accent);
+}
+
+.mobile-nav {
+  background: var(--paper);
+  border-color: var(--hair);
+}

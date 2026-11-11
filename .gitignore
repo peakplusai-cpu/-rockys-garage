@@ -1,0 +1,13 @@
+node_modules
+.next
+data
+public/uploads/*
+!public/uploads/.gitkeep
+.env
+.env.*
+!.env.example
+.vercel
+supabase/.temp
+*.tmp
+*.tsbuildinfo
+agent-tools/
