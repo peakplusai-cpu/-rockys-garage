@@ -149,8 +149,19 @@ export function isReadOnlyRuntime(): boolean {
   return Boolean(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 }
 
+/** Accepts the project URL as pasted: quotes, trailing path (/rest/v1), or the dashboard URL containing the project ref. */
+export function normalizeSupabaseUrl(input: string): string {
+  let value = input.trim().replace(/^["']+|["']+$/g, "");
+  if (/^[a-z0-9-]+\.supabase\.co(?:[/?#]|$)/i.test(value)) value = `https://${value}`;
+  const host = /^https:\/\/([a-z0-9-]+)\.supabase\.co(?:[/?#].*)?$/i.exec(value);
+  if (host) return `https://${host[1].toLowerCase()}.supabase.co`;
+  const dashboard = /^https:\/\/(?:app\.)?supabase\.com\/dashboard\/project\/([a-z0-9]{20})(?:[/?#].*)?$/i.exec(value);
+  if (dashboard) return `https://${dashboard[1].toLowerCase()}.supabase.co`;
+  return value.replace(/\/$/, "");
+}
+
 export function supabaseUrlRaw(): string {
-  return firstEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL").replace(/\/$/, "");
+  return normalizeSupabaseUrl(firstEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"));
 }
 
 export function isValidSupabaseProjectUrl(url: string): boolean {
