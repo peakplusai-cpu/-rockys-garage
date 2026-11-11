@@ -228,58 +228,6 @@ img { max-width: 100%; display: block; }
   -webkit-backdrop-filter: blur(10px);
 }
 
-.brand-strip {
-  overflow: hidden;
-  padding: 22px 0;
-  border-bottom: 1px solid var(--hair);
-  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
-}
-
-.brand-track {
-  display: flex;
-  width: max-content;
-  gap: 28px;
-  animation: brand-run 110s linear infinite;
-}
-
-.brand-logo {
-  flex: none;
-  width: 56px;
-  height: 56px;
-  background-image: url(/intro/logos.webp);
-  background-repeat: no-repeat;
-  filter: grayscale(1) contrast(1.05);
-  opacity: 0.55;
-  transition: filter 0.3s, opacity 0.3s;
-}
-
-.brand-logo:hover { filter: none; opacity: 1; }
-
-@keyframes brand-run {
-  to { transform: translateX(calc(-50% - 14px)); }
-}
-
-.hero-reel-ticks {
-  position: absolute;
-  top: 28px;
-  right: var(--pad);
-  z-index: 3;
-  display: flex;
-  gap: 8px;
-}
-
-.hero-reel-ticks button {
-  width: 36px;
-  height: 2px;
-  padding: 0;
-  border: 0;
-  background: rgba(255,255,255,.35);
-  cursor: pointer;
-}
-
-.hero-reel-ticks button[data-on="true"] { background: #fff; }
-
 .btn {
   appearance: none;
   display: inline-flex;
