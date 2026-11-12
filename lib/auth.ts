@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isBlockedAdminPassword, MAX_PASSWORD_LENGTH, safeEqual } from "./guards";
 import { hashPassword, verifyPassword } from "./password";
 import { createSession, destroySession, envAdminPassword, isAuthenticated } from "./session";
 import { getAdminRecord } from "./store";
@@ -19,8 +20,10 @@ export async function adminExists(): Promise<boolean> {
 }
 
 export function passwordMatches(password: string, storedHash?: string | null): boolean {
+  if (!password || password.length > MAX_PASSWORD_LENGTH) return false;
+  if (isBlockedAdminPassword(password)) return false;
   const envPass = envAdminPassword();
-  if (envPass && password === envPass) return true;
+  if (envPass && safeEqual(password, envPass)) return true;
   if (storedHash && verifyPassword(password, storedHash)) return true;
   return false;
 }

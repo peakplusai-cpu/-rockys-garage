@@ -85,3 +85,17 @@ drop policy if exists rocky_uploads_public_read on storage.objects;
 create policy rocky_uploads_public_read on storage.objects
   for select to anon, authenticated
   using (bucket_id = 'rocky-uploads');
+
+-- line_user_id is an internal LINE binding. A table-level SELECT grant would
+-- still expose it, so public roles only receive the columns the site shows.
+revoke select on table public.rocky_staff from anon, authenticated;
+grant select (
+  id,
+  display_name,
+  role,
+  line_url,
+  line_id,
+  note,
+  sort_order,
+  created_at
+) on table public.rocky_staff to anon, authenticated;

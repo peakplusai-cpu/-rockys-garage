@@ -1,4 +1,5 @@
 import { adminErrorMessage, classifyDbError } from "./admin-errors";
+import { resolveSessionSecret } from "./guards";
 import {
   supabaseAdmin,
   supabaseConfigured,
@@ -6,6 +7,9 @@ import {
   supabasePublic,
   supabaseWriteBlocker,
 } from "./supabase";
+
+/** Thrown away during the write probe. Public staff queries must ignore this id. */
+export const HEALTH_PROBE_STAFF_ID = "__health_probe__";
 
 export type HealthCheck = { id: string; label: string; ok: boolean; message: string };
 
@@ -20,13 +24,32 @@ export type HealthReport = {
 const TABLES = ["rocky_admin", "rocky_staff", "rocky_cars", "rocky_site_settings"] as const;
 const HEALTH_MS = 5000;
 
+export function probeLabel(code: string | undefined): string {
+  if (code === "ok") return "寫入、讀回、刪除測試都成功，資料庫可正常保存。";
+  if (code === "local") return "目前是本機檔案模式，沒有連到資料庫，無法測試 Supabase 寫入。";
+  if (code === "cleanup") return "寫入成功但清除測試資料失敗，請到 rocky_staff 刪除測試列。";
+  if (!code || code === "fail") return "寫入測試沒有成功。請依上方連線檢查處理。";
+  return adminErrorMessage(code);
+}
+
 const KEY_LABEL = { none: "未設定", service: "service_role", anon: "anon／publishable", unknown: "無法辨識" } as const;
 
 /** Read-only checks. Never mutates data, never returns secret values. */
 export async function checkSupabaseHealth(): Promise<HealthReport> {
   const env = supabaseEnvReport();
   const blocker = supabaseWriteBlocker();
+  const sessionReady = Boolean(resolveSessionSecret());
   const checks: HealthCheck[] = [
+    {
+      id: "session-secret",
+      label: "SESSION_SECRET",
+      ok: sessionReady,
+      message: sessionReady
+        ? process.env.NODE_ENV === "production"
+          ? "OK"
+          : "本機可使用開發用密鑰。正式環境必須另設一組未公開的 SESSION_SECRET，否則後台無法登入。"
+        : "正式環境的 SESSION_SECRET 缺失或仍是範例值，後台登入會被拒絕。",
+    },
     {
       id: "url",
       label: "NEXT_PUBLIC_SUPABASE_URL",
@@ -59,14 +82,20 @@ export async function checkSupabaseHealth(): Promise<HealthReport> {
     },
   ];
 
-  if (blocker) {
-    const local = !env.urlSet && !env.readOnlyRuntime;
+  if (!env.urlSet && !env.readOnlyRuntime) {
     return {
-      mode: local ? "local-file" : "blocked",
+      mode: "local-file",
       connected: false,
-      summary: local
-        ? "未連接 Supabase：目前資料只寫在本機檔案（data/*.json），部署或重啟後會遺失。"
-        : `未連接資料庫，後台無法保存資料。${adminErrorMessage(blocker)}`,
+      summary: "未連接 Supabase：目前資料只寫在本機檔案（data/*.json），部署或重啟後會遺失。",
+      checks,
+    };
+  }
+
+  if (blocker) {
+    return {
+      mode: "blocked",
+      connected: false,
+      summary: `未連接資料庫，後台無法保存資料。${adminErrorMessage(blocker)}`,
       checks,
     };
   }
@@ -126,34 +155,28 @@ export async function checkSupabaseHealth(): Promise<HealthReport> {
   };
 }
 
-const PROBE_ID = "__health_probe__";
-
 /** Real write round-trip: insert, read back, delete a throwaway rocky_staff row. */
-export async function runWriteProbe(): Promise<{ ok: boolean; message: string }> {
+export async function runWriteProbe(): Promise<{ ok: boolean; code: string }> {
   const blocker = supabaseWriteBlocker();
-  if (blocker) return { ok: false, message: adminErrorMessage(blocker) };
-  if (!supabaseConfigured()) {
-    return { ok: false, message: "目前是本機檔案模式，沒有連到資料庫，無法測試 Supabase 寫入。" };
-  }
+  if (blocker) return { ok: false, code: blocker };
+  if (!supabaseConfigured()) return { ok: false, code: "local" };
   const db = supabaseAdmin(HEALTH_MS);
   try {
     const up = await db
       .from("rocky_staff")
-      .upsert({ id: PROBE_ID, display_name: "health", role: "probe", sort_order: 9999 }, { onConflict: "id" })
+      .upsert(
+        { id: HEALTH_PROBE_STAFF_ID, display_name: "health", role: "probe", sort_order: 9999 },
+        { onConflict: "id" }
+      )
       .select("id");
     if (up.error) throw up.error;
-    if (!up.data?.length) return { ok: false, message: adminErrorMessage("empty") };
-    const back = await db.from("rocky_staff").select("id").eq("id", PROBE_ID);
+    if (!up.data?.length) return { ok: false, code: "empty" };
+    const back = await db.from("rocky_staff").select("id").eq("id", HEALTH_PROBE_STAFF_ID);
     if (back.error) throw back.error;
-    const del = await db.from("rocky_staff").delete().eq("id", PROBE_ID).select("id");
-    if (del.error) {
-      return { ok: false, message: `寫入成功但清除測試資料失敗，請到 rocky_staff 刪除 id=${PROBE_ID} 那列。` };
-    }
-    return back.data?.length
-      ? { ok: true, message: "寫入、讀回、刪除測試都成功，資料庫可正常保存。" }
-      : { ok: false, message: "寫入後讀不回資料，請檢查金鑰與 RLS。" };
+    const del = await db.from("rocky_staff").delete().eq("id", HEALTH_PROBE_STAFF_ID).select("id");
+    if (del.error) return { ok: false, code: "cleanup" };
+    return back.data?.length ? { ok: true, code: "ok" } : { ok: false, code: "empty" };
   } catch (error) {
-    const c = classifyDbError(error);
-    return { ok: false, message: adminErrorMessage(c.code, c.detail) };
+    return { ok: false, code: classifyDbError(error).code };
   }
 }

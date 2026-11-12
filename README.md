@@ -10,7 +10,9 @@ npm install
 npm run dev
 ```
 
-預設後台密碼見 `.env.example` 的 `ADMIN_PASSWORD`（本機無 Supabase 時寫入 `data/store.json`）。
+本機開發（`npm run dev`）若未設定 `ADMIN_PASSWORD`，第一次建立 `data/store.json` 時使用 `rocky-admin-2026`。這個密碼只供本機，正式環境會拒絕它。正式環境必須另外設定 `ADMIN_PASSWORD` 與 `SESSION_SECRET`，否則後台無法登入。請在 Vercel 設定這兩個變數後重新部署。
+
+既有 Supabase 專案請再執行 `supabase/migrations/20261112_hide_staff_line_user_id.sql`，避免匿名金鑰讀到顧問的 LINE user id。`supabase/schema.sql` 已包含同樣的權限。
 
 ## Supabase（與 Anson Top Car 同專案、獨立資料）
 
@@ -20,4 +22,4 @@ npm run dev
 
 ## 部署
 
-Vercel 等環境變數同 `.env.example`；`NEXT_PUBLIC_SITE_URL` 設為正式網址。
+Vercel 等環境變數同 `.env.example`；`NEXT_PUBLIC_SITE_URL` 設為正式網址。`ADMIN_PASSWORD` 與 `SESSION_SECRET` 請使用未公開的隨機值，不要沿用範例或舊的預設密碼。若目前仍用已公開的預設密碼登入，部署後請先在環境變數放入新的 `ADMIN_PASSWORD` 再重新登入。

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { logoutAdmin } from "@/app/actions/auth";
+import { AdminNav } from "@/components/AdminNav";
 import { adminErrorMessage } from "@/lib/admin-errors";
 import { adminExists, envAdminPassword, isAuthenticated } from "@/lib/auth";
 import { supabaseEnvReport, supabaseWriteBlocker } from "@/lib/supabase";
@@ -16,16 +16,6 @@ export default async function DeskLayout({ children }: { children: React.ReactNo
   }
   if (!(await adminExists())) redirect("/admin/setup");
 
-  const headerList = await headers();
-  const path = headerList.get("x-invoke-path") || headerList.get("next-url") || "";
-
-  const links = [
-    { href: "/admin", label: "總覽" },
-    { href: "/admin/cars", label: "庫存" },
-    { href: "/admin/staff", label: "顧問 LINE" },
-    { href: "/admin/settings", label: "聯絡設定" },
-    { href: "/admin/health", label: "連線檢查" },
-  ];
   const blocker = supabaseWriteBlocker();
   const localFile = !blocker && !supabaseEnvReport().urlSet;
 
@@ -36,17 +26,7 @@ export default async function DeskLayout({ children }: { children: React.ReactNo
           <span className="wordmark-en">Rocky&apos;s</span>
           <span className="wordmark-zh">員工後台</span>
         </Link>
-        <nav>
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              data-active={path === link.href || (link.href !== "/admin" && path.startsWith(link.href))}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        <AdminNav />
         <form action={logoutAdmin}>
           <button className="btn btn-ghost" type="submit">
             登出

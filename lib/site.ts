@@ -1,3 +1,5 @@
+import { jsonForScript } from "./guards";
+
 function resolvedSiteUrl(): string {
   const raw = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").trim();
   try {
@@ -21,3 +23,5 @@ export const jsonLdAutoDealer = {
   image: `${SITE_URL}/og.jpg`,
   description: SITE_DESCRIPTION,
 } as const;
+
+export const jsonLdAutoDealerScript = jsonForScript(jsonLdAutoDealer);

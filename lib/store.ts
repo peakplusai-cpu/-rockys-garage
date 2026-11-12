@@ -3,8 +3,11 @@ import { unstable_cache } from "next/cache";
 import { dirname, join } from "path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AdminDbError, classifyDbError } from "./admin-errors";
-import { parseBodyType, parseDoors } from "./catalog";
-import type { Admin, Car, SpecRow, Staff, Store } from "./types";
+import { parseBodyType, parseDoors, parseStatus } from "./catalog";
+import { safeImageUrl } from "./guards";
+import { HEALTH_PROBE_STAFF_ID } from "./health";
+import { isAllowedLineUrl } from "./line";
+import type { Admin, Car, Photo, SpecRow, Staff, Store } from "./types";
 import { seedStore } from "./seed";
 import { isAuthenticated } from "./session";
 import {
@@ -96,6 +99,32 @@ function staffRow(person: Staff) {
   };
 }
 
+function asPhotos(value: unknown): Photo[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const photo = item as Partial<Photo>;
+      const url = safeImageUrl(String(photo.url ?? ""));
+      if (!url) return null;
+      return {
+        id: String(photo.id ?? ""),
+        url,
+        alt: String(photo.alt ?? "").slice(0, 180),
+      };
+    })
+    .filter((photo): photo is Photo => Boolean(photo));
+}
+
+function presentPublicStaff(person: Staff): Staff {
+  return {
+    ...person,
+    lineUserId: "",
+    lineUrl: isAllowedLineUrl(person.lineUrl) ? person.lineUrl : "",
+    note: person.note.slice(0, 500),
+  };
+}
+
 function asSpecs(value: unknown): SpecRow[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -134,10 +163,10 @@ function normalizeCar(car: Partial<Car> & Record<string, unknown>): Car {
     specs: asSpecs(car.specs),
     equipment,
     story: String(car.story ?? ""),
-    status: (car.status as Car["status"]) || "available",
+    status: parseStatus(car.status),
     published: Boolean(car.published),
     featured: Boolean(car.featured),
-    photos: Array.isArray(car.photos) ? (car.photos as Car["photos"]) : [],
+    photos: asPhotos(car.photos),
     createdAt: String(car.createdAt ?? car.created_at ?? ""),
     updatedAt: String(car.updatedAt ?? car.updated_at ?? ""),
   };
@@ -200,14 +229,21 @@ const cachedPublishedCars = unstable_cache(
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
 );
 
+const PUBLIC_STAFF_COLUMNS =
+  "id,display_name,role,line_url,line_id,note,sort_order,created_at";
+
 const cachedPublicStaff = unstable_cache(
   async () => {
     if (!(supabaseAnonConfigured() || supabaseAdminConfigured())) return [] as Staff[];
     const { data, error } = await withTimeout(
-      supabasePublic().from("rocky_staff").select("*").order("sort_order")
+      supabasePublic()
+        .from("rocky_staff")
+        .select(PUBLIC_STAFF_COLUMNS)
+        .neq("id", HEALTH_PROBE_STAFF_ID)
+        .order("sort_order")
     );
     if (error) throw error;
-    return (data ?? []).map((row) => rowToStaff(row as Record<string, unknown>));
+    return (data ?? []).map((row) => presentPublicStaff(rowToStaff(row as Record<string, unknown>)));
   },
   ["rocky-public-staff"],
   { revalidate: 60, tags: [PUBLIC_DATA_TAG] }
@@ -228,7 +264,12 @@ export async function getPublishedCar(slug: string): Promise<Car | null> {
 }
 
 export async function listPublicStaff(): Promise<Staff[]> {
-  if (!supabaseConfigured()) return [...getJsonStore().staff].sort((a, b) => a.sortOrder - b.sortOrder);
+  if (!supabaseConfigured()) {
+    return getJsonStore()
+      .staff.filter((person) => person.id !== HEALTH_PROBE_STAFF_ID)
+      .map(presentPublicStaff)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
   try {
     return await cachedPublicStaff();
   } catch (error) {
@@ -242,6 +283,10 @@ export async function listPublicStaff(): Promise<Staff[]> {
 /* ------------------------------------------------------------------ */
 
 type Target = { kind: "supabase"; db: SupabaseClient } | { kind: "json" };
+
+async function assertDeskSession(): Promise<void> {
+  if (!(await isAuthenticated())) throw new AdminDbError("db", "unauthorized");
+}
 
 function adminTarget(): Target {
   const blocker = supabaseWriteBlocker();
@@ -314,6 +359,7 @@ export async function saveAdminRecord(admin: Admin): Promise<void> {
   const target = adminTarget();
   if (target.kind === "json") {
     const store = getJsonStore();
+    if (store.admin) throw new AdminDbError("db", "admin already exists");
     store.admin = admin;
     jsonCache = store;
     persistJson(store);
@@ -322,7 +368,7 @@ export async function saveAdminRecord(admin: Admin): Promise<void> {
   const data = await run<{ id: number }[]>(
     target.db
       .from("rocky_admin")
-      .upsert({ id: 1, password_hash: admin.passwordHash, created_at: admin.createdAt })
+      .insert({ id: 1, password_hash: admin.passwordHash, created_at: admin.createdAt })
       .select("id")
   );
   mustHaveRows(data);
@@ -330,6 +376,7 @@ export async function saveAdminRecord(admin: Admin): Promise<void> {
 
 /** Insert or update one car. Returns the car as stored (slug may get a suffix on conflict). */
 export async function saveCar(car: Car, mode: "create" | "update"): Promise<Car> {
+  await assertDeskSession();
   const target = adminTarget();
   if (target.kind === "json") {
     const store = getJsonStore();
@@ -370,6 +417,7 @@ export async function saveCar(car: Car, mode: "create" | "update"): Promise<Car>
 
 /** Returns the car slug (for revalidation), or null when a local-file car does not exist. */
 export async function setCarPublished(id: string, published: boolean): Promise<string | null> {
+  await assertDeskSession();
   const target = adminTarget();
   const updatedAt = new Date().toISOString();
   if (target.kind === "json") {
@@ -390,6 +438,7 @@ export async function setCarPublished(id: string, published: boolean): Promise<s
 }
 
 export async function removeCar(id: string): Promise<void> {
+  await assertDeskSession();
   const target = adminTarget();
   if (target.kind === "json") {
     const store = getJsonStore();
@@ -402,6 +451,7 @@ export async function removeCar(id: string): Promise<void> {
 }
 
 export async function saveStaff(person: Staff): Promise<void> {
+  await assertDeskSession();
   const target = adminTarget();
   if (target.kind === "json") {
     const store = getJsonStore();
@@ -419,6 +469,7 @@ export async function saveStaff(person: Staff): Promise<void> {
 }
 
 export async function removeStaff(id: string): Promise<void> {
+  await assertDeskSession();
   const target = adminTarget();
   if (target.kind === "json") {
     const store = getJsonStore();

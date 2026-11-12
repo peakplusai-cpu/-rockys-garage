@@ -256,10 +256,17 @@ export function supabaseAdmin(timeoutMs = ADMIN_FETCH_MS): SupabaseClient {
   return client;
 }
 
+let warnedServicePublic = false;
+
 /** Anon/publishable client: RLS applies. Public pages use this to read published cars and settings. */
 export function supabasePublic(): SupabaseClient {
   const url = supabaseUrl();
-  const key = supabaseAnonKey() || supabaseSecretKey();
+  const anon = supabaseAnonKey();
+  const key = anon || supabaseSecretKey();
+  if (!anon && key && !warnedServicePublic) {
+    warnedServicePublic = true;
+    console.error("supabase public read is using the service role key because no anon key is set");
+  }
   if (!url || !key) {
     throw new Error("Supabase anon key is not configured");
   }

@@ -1,3 +1,4 @@
+import { canonicalInstagramUrl } from "@/lib/instagram";
 import { lineTarget } from "@/lib/line";
 
 export function ContactButtons({
@@ -11,6 +12,7 @@ export function ContactButtons({
 }) {
   const ghost = inverted ? "btn btn-ig" : "btn btn-ghost btn-ig";
   const lineHref = lineTarget(lineUrl, "").addFriendWeb;
+  const instagramHref = canonicalInstagramUrl(instagramUrl);
   return (
     <div className="contact-row">
       {lineHref ? (
@@ -18,8 +20,8 @@ export function ContactButtons({
           LINE 諮詢
         </a>
       ) : null}
-      {instagramUrl ? (
-        <a className={ghost} href={instagramUrl} target="_blank" rel="noopener noreferrer">
+      {instagramHref ? (
+        <a className={ghost} href={instagramHref} target="_blank" rel="noopener noreferrer">
           Instagram
         </a>
       ) : null}

@@ -16,17 +16,17 @@ async function requireAuth() {
 
 export async function upsertStaff(formData: FormData) {
   await requireAuth();
-  const id = String(formData.get("id") ?? "");
-  const displayName = String(formData.get("displayName") ?? "").trim();
-  const role = String(formData.get("role") ?? "").trim();
-  const lineId = String(formData.get("lineId") ?? "").trim();
-  const lineUrlRaw = String(formData.get("lineUrl") ?? "").trim();
-  const note = String(formData.get("note") ?? "").trim();
+  const id = String(formData.get("id") ?? "").trim().slice(0, 80);
+  const displayName = String(formData.get("displayName") ?? "").trim().slice(0, 80);
+  const role = String(formData.get("role") ?? "").trim().slice(0, 80);
+  const lineId = String(formData.get("lineId") ?? "").trim().slice(0, 40);
+  const lineUrlRaw = String(formData.get("lineUrl") ?? "").trim().slice(0, 300);
+  const note = String(formData.get("note") ?? "").trim().slice(0, 500);
   const sortOrder = Number(formData.get("sortOrder") ?? 0);
-  if (!lineId && !lineUrlRaw) {
+  const lineUrl = resolveLineUrl(lineUrlRaw, lineId);
+  if (!lineUrl) {
     redirect("/admin/staff?error=line");
   }
-  const lineUrl = resolveLineUrl(lineUrlRaw, lineId);
   try {
     const staff = await listAdminStaff();
     const existing = staff.find((person) => person.id === id);

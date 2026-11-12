@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { BODY_TYPES, DOOR_OPTIONS, specsToText } from "@/lib/catalog";
+import { safeImageUrl } from "@/lib/guards";
 import type { Car } from "@/lib/types";
 
 export function CarForm({
@@ -186,7 +187,7 @@ export function CarForm({
       <div className="thumb-row">
         {photoUrls
           .split("\n")
-          .map((url) => url.trim())
+          .map((url) => safeImageUrl(url))
           .filter(Boolean)
           .map((url) => (
             <img key={url} src={url} alt="" />

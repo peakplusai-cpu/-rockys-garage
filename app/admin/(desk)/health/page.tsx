@@ -1,16 +1,16 @@
 import { runHealthWriteProbe } from "@/app/actions/health";
 import { requireDeskAuth } from "@/lib/auth";
-import { checkSupabaseHealth } from "@/lib/health";
+import { checkSupabaseHealth, probeLabel } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
 
 export default async function HealthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ probe?: string; msg?: string }>;
+  searchParams: Promise<{ probe?: string }>;
 }) {
   await requireDeskAuth();
-  const { probe, msg } = await searchParams;
+  const { probe } = await searchParams;
   const report = await checkSupabaseHealth();
 
   return (
@@ -22,7 +22,7 @@ export default async function HealthPage({
       </p>
       {probe ? (
         <p className={probe === "ok" ? "flash" : "flash flash-bad"} role={probe === "ok" ? undefined : "alert"}>
-          寫入測試：{msg}
+          寫入測試：{probeLabel(probe)}
         </p>
       ) : null}
       <table className="table">

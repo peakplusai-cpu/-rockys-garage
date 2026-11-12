@@ -64,7 +64,7 @@ export function LineLaunch({
   }
 
   return (
-    <a href={href} className={className} onClick={onClick} rel="noreferrer">
+    <a href={href} className={className} onClick={onClick} rel="noopener noreferrer">
       {children}
     </a>
   );
