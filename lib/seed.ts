@@ -2,17 +2,28 @@ import { hashPassword } from "./password";
 import { PLACEHOLDER_INSTAGRAM, PLACEHOLDER_LINE } from "./settings";
 import type { Store } from "./types";
 
-const DEMO_PASSWORD = process.env.ADMIN_PASSWORD || "rocky-admin-2026";
+const LOCAL_DEMO_PASSWORD = "rocky-admin-2026";
+
+function initialPassword(): string {
+  const configured = process.env.ADMIN_PASSWORD?.trim() ?? "";
+  if (configured) return configured;
+  return process.env.NODE_ENV === "production" ? "" : LOCAL_DEMO_PASSWORD;
+}
 
 /** Local JSON fallback only: admin + owner staff row, no demo inventory. */
 export function seedStore(store: Store): Store {
   const now = new Date().toISOString();
+  const password = initialPassword();
   return {
     ...store,
-    admin: store.admin ?? {
-      passwordHash: hashPassword(DEMO_PASSWORD),
-      createdAt: now,
-    },
+    admin:
+      store.admin ??
+      (password
+        ? {
+            passwordHash: hashPassword(password),
+            createdAt: now,
+          }
+        : null),
     staff: store.staff.length
       ? store.staff
       : [
@@ -32,4 +43,4 @@ export function seedStore(store: Store): Store {
   };
 }
 
-export { DEMO_PASSWORD, PLACEHOLDER_INSTAGRAM, PLACEHOLDER_LINE };
+export { PLACEHOLDER_INSTAGRAM, PLACEHOLDER_LINE };

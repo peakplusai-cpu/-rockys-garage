@@ -1,4 +1,4 @@
-import type { BodyType, Car } from "./types";
+import type { BodyType, Car, CarStatus } from "./types";
 
 export type DoorCount = Car["doors"];
 export type DoorFilter = DoorCount | 0;
@@ -56,6 +56,11 @@ export const YEAR_RANGES = [
 
 export function bodyLabel(type: BodyType | string): string {
   return BODY_TYPES.find((item) => item.id === type)?.label ?? type;
+}
+
+export function parseStatus(value: unknown): CarStatus {
+  if (value === "available" || value === "reserved" || value === "sold") return value;
+  return "available";
 }
 
 export function parseBodyType(value: unknown): BodyType {

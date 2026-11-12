@@ -13,6 +13,27 @@ export type LineTarget = {
 const URL_ID =
   /(?:line\.me\/R\/(?:ti\/p|oaMessage)\/|line\.me\/ti\/p\/|page\.line\.me\/)((?:~|%40|@|＠)*)([^/?#\\]+)/i;
 
+const LINE_HOSTS = new Set(["line.me", "www.line.me", "lin.ee", "page.line.me", "liff.line.me"]);
+
+/** Public LINE links may only point at LINE hosts, including lin.ee short links. */
+export function isAllowedLineUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    const host = url.hostname.toLowerCase();
+    if (LINE_HOSTS.has(host)) return true;
+    return host.endsWith(".line.me");
+  } catch {
+    return false;
+  }
+}
+
+function httpsUrl(value: string): string {
+  const url = new URL(value);
+  url.protocol = "https:";
+  return url.toString();
+}
+
 function cleanLineId(raw: string): string {
   let id = raw.trim().replace(/\\+$/g, "");
   try {
@@ -48,8 +69,9 @@ export function lineTarget(lineUrl: string, lineId: string, message = ""): LineT
         ? `https://${web}`
         : ""
     : "";
+  const safeWeb = webHref && isAllowedLineUrl(webHref) ? httpsUrl(webHref) : "";
 
-  const addFriendWeb = id ? `https://line.me/R/ti/p/${id}` : webHref;
+  const addFriendWeb = id ? `https://line.me/R/ti/p/${id}` : safeWeb;
   const addFriendApp = id ? `line://ti/p/${id}` : "";
   const chatWeb = id ? `https://line.me/R/oaMessage/${id}/?${text}` : addFriendWeb;
   const chatApp = id ? `line://oaMessage/${id}/?${text}` : addFriendApp;

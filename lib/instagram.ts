@@ -21,6 +21,29 @@ export function parseInstagram(input: string): InstagramParse {
   return USERNAME.test(username) ? { ok: true, username } : { ok: false };
 }
 
+export function isAllowedInstagramUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "instagram.com" ||
+      host.endsWith(".instagram.com") ||
+      host === "instagr.am" ||
+      host.endsWith(".instagr.am")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function canonicalInstagramUrl(value: string): string {
+  if (!isAllowedInstagramUrl(value)) return "";
+  const url = new URL(value);
+  url.protocol = "https:";
+  return url.toString();
+}
+
 export function instagramWebUrl(username: string): string {
   return username ? `https://instagram.com/${username}` : "";
 }

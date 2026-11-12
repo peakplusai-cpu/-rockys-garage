@@ -15,11 +15,19 @@ export default async function SetupPage({
   const message =
     error === "short"
       ? "密碼至少八碼。"
-      : error === "mismatch"
-        ? "兩次輸入不一致。"
-        : error
-          ? adminErrorMessage(error)
-          : "";
+      : error === "long"
+        ? "密碼過長。"
+        : error === "weak"
+          ? "請不要使用已公開的範例密碼。"
+          : error === "mismatch"
+            ? "兩次輸入不一致。"
+            : error === "rate"
+              ? "嘗試次數過多，請稍後再試。"
+              : error === "session"
+                ? "伺服器的 SESSION_SECRET 尚未設定，或仍是範例值。請換成一組未公開的密鑰後重新部署。"
+                : error
+                  ? adminErrorMessage(error)
+                  : "";
 
   return (
     <main className="gate">

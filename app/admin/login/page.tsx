@@ -19,12 +19,18 @@ export default async function LoginPage({
         <p className="engraved">Staff</p>
         <h1>登入</h1>
         <p className="mute" style={{ marginBottom: 32 }}>
-          Rocky&apos;s Garage 員工入口。預設密碼見專案 README（ADMIN_PASSWORD）。
+          Rocky&apos;s Garage 員工入口。
         </p>
         {error === "invalid" ? <p className="flash">密碼不正確。</p> : null}
-        {error && error !== "invalid" ? (
+        {error === "rate" ? <p className="flash">嘗試次數過多，請稍後再試。</p> : null}
+        {error === "session" ? (
           <p className="flash" role="alert">
-            {adminErrorMessage(error)} 也可以在環境變數設定 ADMIN_PASSWORD 後重新部署，直接用該密碼登入。
+            伺服器的 SESSION_SECRET 尚未設定，或仍是範例值。請換成一組未公開的密鑰後重新部署。
+          </p>
+        ) : null}
+        {error && error !== "invalid" && error !== "rate" && error !== "session" ? (
+          <p className="flash" role="alert">
+            {adminErrorMessage(error)}
           </p>
         ) : null}
         <form action={loginAdmin}>

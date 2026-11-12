@@ -26,7 +26,14 @@ export default async function StaffPage({
       {bound ? <p className="flash">LINE 聯絡資料已更新。</p> : null}
       {saved ? <p className="flash">已儲存（資料庫已確認寫入）。</p> : null}
       {error === "line" ? <p className="flash">LINE 聯絡資料未完成，請確認官方帳號 ID 或網址。</p> : null}
-      {error && error !== "line" ? <p className="flash" role="alert">{adminErrorMessage(error)}</p> : null}
+      {error === "noline" ? <p className="flash">尚未設定 LINE Login 頻道。</p> : null}
+      {error === "token" ? <p className="flash">LINE 授權失敗，請再試一次。</p> : null}
+      {error === "profile" ? <p className="flash">讀不到 LINE 個人資料。</p> : null}
+      {error === "state" ? <p className="flash">LINE 綁定驗證失敗或已過期，請再試一次。</p> : null}
+      {error === "missing" ? <p className="flash">找不到要綁定的顧問。</p> : null}
+      {error && !["line", "noline", "token", "profile", "state", "missing"].includes(error) ? (
+        <p className="flash" role="alert">{adminErrorMessage(error)}</p>
+      ) : null}
       {readError ? (
         <p className="flash" role="alert">
           讀不到顧問資料。{adminErrorMessage(readError.code, readError.detail)}

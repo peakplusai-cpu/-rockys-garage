@@ -3,12 +3,13 @@
 import { revalidatePublic } from "@/lib/revalidate-public";
 import { redirect } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth";
-import { parseBodyType, parseDoors, parseSpecs } from "@/lib/catalog";
+import { parseBodyType, parseDoors, parseSpecs, parseStatus } from "@/lib/catalog";
 import { slugify } from "@/lib/format";
+import { safeImageUrl } from "@/lib/guards";
 import { uid } from "@/lib/id";
 import { classifyDbError, isRedirectError, adminErrorMessage } from "@/lib/admin-errors";
 import { getAdminCar, removeCar, saveCar, setCarPublished } from "@/lib/store";
-import type { Car, CarStatus, Photo } from "@/lib/types";
+import type { Car, Photo } from "@/lib/types";
 
 async function requireAuth() {
   if (!(await isAuthenticated())) {
@@ -19,16 +20,27 @@ async function requireAuth() {
 function parseList(raw: string): string[] {
   return raw
     .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .map((item) => item.trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 80);
+}
+
+function clip(value: FormDataEntryValue | null, max: number): string {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+function num(value: FormDataEntryValue | null, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
 function parseCar(formData: FormData, existing?: Car): Omit<Car, "id" | "createdAt"> {
-  const make = String(formData.get("make") ?? "").trim();
-  const makeEn = String(formData.get("makeEn") ?? "").trim();
-  const model = String(formData.get("model") ?? "").trim();
-  const year = Number(formData.get("year") ?? 0);
-  const requestedSlug = String(formData.get("slug") ?? "").trim();
+  const make = clip(formData.get("make"), 80);
+  const makeEn = clip(formData.get("makeEn"), 80);
+  const model = clip(formData.get("model"), 80);
+  const year = num(formData.get("year"), 1980, 2035, new Date().getFullYear());
+  const requestedSlug = clip(formData.get("slug"), 80);
   const slugSource =
     !requestedSlug || /^https?:\/\//i.test(requestedSlug)
       ? `${makeEn || make}-${model}-${year}`
@@ -36,8 +48,9 @@ function parseCar(formData: FormData, existing?: Car): Omit<Car, "id" | "created
   const slug = slugify(slugSource) || uid("car");
   const photoUrls = String(formData.get("photoUrls") ?? "")
     .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .map((line) => safeImageUrl(line))
+    .filter(Boolean)
+    .slice(0, 30);
   const photos: Photo[] = photoUrls.map((url, index) => ({
     id: existing?.photos[index]?.id ?? uid("ph"),
     url,
@@ -51,22 +64,22 @@ function parseCar(formData: FormData, existing?: Car): Omit<Car, "id" | "created
     makeEn,
     model,
     year,
-    price: Number(formData.get("price") ?? 0),
-    mileage: Number(formData.get("mileage") ?? 0),
-    color: String(formData.get("color") ?? "").trim(),
-    interior: String(formData.get("interior") ?? "").trim(),
-    engine: String(formData.get("engine") ?? "").trim(),
-    displacement: String(formData.get("displacement") ?? "").trim(),
-    horsepower: Number(formData.get("horsepower") ?? 0),
-    transmission: String(formData.get("transmission") ?? "").trim(),
-    drivetrain: String(formData.get("drivetrain") ?? "").trim(),
+    price: num(formData.get("price"), 0, 1_000_000_000_000, 0),
+    mileage: num(formData.get("mileage"), 0, 5_000_000, 0),
+    color: clip(formData.get("color"), 80),
+    interior: clip(formData.get("interior"), 80),
+    engine: clip(formData.get("engine"), 120),
+    displacement: clip(formData.get("displacement"), 40),
+    horsepower: num(formData.get("horsepower"), 0, 5000, 0),
+    transmission: clip(formData.get("transmission"), 40),
+    drivetrain: clip(formData.get("drivetrain"), 40),
     doors: parseDoors(formData.get("doors")),
     bodyType: parseBodyType(formData.get("bodyType")),
     options: equipment,
-    specs: parseSpecs(String(formData.get("specs") ?? "")),
+    specs: parseSpecs(String(formData.get("specs") ?? "")).slice(0, 40),
     equipment,
-    story: String(formData.get("story") ?? "").trim(),
-    status: (String(formData.get("status") ?? "available") as CarStatus) || "available",
+    story: clip(formData.get("story"), 8000),
+    status: parseStatus(formData.get("status")),
     published: formData.get("published") === "on" || formData.get("published") === "true",
     featured: formData.get("featured") === "on" || formData.get("featured") === "true",
     photos,

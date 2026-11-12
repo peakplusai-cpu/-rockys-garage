@@ -77,11 +77,34 @@ create policy rocky_cars_public_read on rocky_cars for select to anon, authentic
 drop policy if exists rocky_settings_public_read on rocky_site_settings;
 create policy rocky_settings_public_read on rocky_site_settings for select to anon, authenticated using (true);
 
-insert into storage.buckets (id, name, public)
-values ('rocky-uploads', 'rocky-uploads', true)
-on conflict (id) do update set public = true;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'rocky-uploads',
+  'rocky-uploads',
+  true,
+  31457280,
+  array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+)
+on conflict (id) do update set
+  public = true,
+  file_size_limit = 31457280,
+  allowed_mime_types = array['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 drop policy if exists rocky_uploads_public_read on storage.objects;
 create policy rocky_uploads_public_read on storage.objects
   for select to anon, authenticated
   using (bucket_id = 'rocky-uploads');
+
+-- line_user_id is an internal LINE binding. A table-level SELECT grant would
+-- still expose it, so public roles only receive the columns the site shows.
+revoke select on table public.rocky_staff from anon, authenticated;
+grant select (
+  id,
+  display_name,
+  role,
+  line_url,
+  line_id,
+  note,
+  sort_order,
+  created_at
+) on table public.rocky_staff to anon, authenticated;
