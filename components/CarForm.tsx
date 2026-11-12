@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { uploadInventoryPhoto } from "@/lib/browser-upload";
 import { BODY_TYPES, DOOR_OPTIONS, specsToText } from "@/lib/catalog";
 import { safeImageUrl } from "@/lib/guards";
 import type { Car } from "@/lib/types";
@@ -25,15 +26,10 @@ export function CarForm({
     setError("");
     const next: string[] = [];
     for (const file of Array.from(files)) {
-      const body = new FormData();
-      body.set("file", file);
       try {
-        const res = await fetch("/api/upload", { method: "POST", body });
-        const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-        if (res.ok && data.url) next.push(data.url);
-        else setError(`照片上傳失敗：${data.error || res.status}。請確認 rocky-uploads bucket 與 SUPABASE_SERVICE_ROLE_KEY。`);
-      } catch {
-        setError("照片上傳失敗：網路錯誤。");
+        next.push(await uploadInventoryPhoto(file));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "照片上傳失敗：網路錯誤。");
       }
     }
     setPhotoUrls((prev) => [prev, ...next].filter(Boolean).join("\n"));
@@ -163,7 +159,7 @@ export function CarForm({
           <textarea id="story" name="story" defaultValue={car?.story} />
         </div>
         <div className="field wide">
-          <label htmlFor="photoUrls">照片（每行一個網址，或上傳）</label>
+          <label htmlFor="photoUrls">照片（每行一個網址，或上傳，單張 30MB 以內）</label>
           <textarea
             id="photoUrls"
             name="photoUrls"

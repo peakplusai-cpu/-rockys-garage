@@ -12,7 +12,7 @@ npm run dev
 
 本機開發（`npm run dev`）若未設定 `ADMIN_PASSWORD`，第一次建立 `data/store.json` 時使用 `rocky-admin-2026`。這個密碼只供本機，正式環境會拒絕它。正式環境必須另外設定 `ADMIN_PASSWORD` 與 `SESSION_SECRET`，否則後台無法登入。請在 Vercel 設定這兩個變數後重新部署。
 
-既有 Supabase 專案請再執行 `supabase/migrations/20261112_hide_staff_line_user_id.sql`，避免匿名金鑰讀到顧問的 LINE user id。`supabase/schema.sql` 已包含同樣的權限。
+既有 Supabase 專案請再執行 `supabase/migrations/20261112_hide_staff_line_user_id.sql`，避免匿名金鑰讀到顧問的 LINE user id，以及 `supabase/migrations/20261112_upload_30mb.sql`，讓 `rocky-uploads` 接受 30MB 的 JPEG、PNG、GIF 與 WebP。正式環境的照片由瀏覽器直接上傳到 Supabase，不會經過 Vercel Function。`supabase/schema.sql` 已包含同樣的設定。
 
 ## Supabase（與 Anson Top Car 同專案、獨立資料）
 
