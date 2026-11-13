@@ -3,7 +3,6 @@ export function lineLoginEnabled(): boolean {
 }
 
 export type LineTarget = {
-  /** Display token (@official or ~personal), empty when using a short link. */
   id: string;
   addFriendWeb: string;
   addFriendApp: string;
@@ -11,202 +10,123 @@ export type LineTarget = {
   chatApp: string;
 };
 
-const LINE_ME_PATH_ID =
-  /(?:https?:\/\/)?(?:[^/]+\.)?line\.me\/(?:R\/(?:ti\/p|oaMessage)\/|ti\/p\/)([^/?#]+)/i;
+const UNSAFE_SCHEME = /^(javascript|data|vbscript):/i;
 
-const LINE_HOSTS = new Set(["line.me", "www.line.me", "lin.ee", "page.line.me", "liff.line.me"]);
+/** http(s) on any host; rejects javascript:/data: only. */
+export function isSafeHttpUrl(value: string): boolean {
+  return Boolean(toSafeHttpUrl(value));
+}
 
-const OFFICIAL_ID = /^[A-Za-z0-9._-]{2,30}$/;
-const PERSONAL_ID = /^[A-Za-z0-9._-]{4,30}$/;
-
-/** Public LINE links may only point at LINE hosts, including lin.ee short links. */
+/** @deprecated Use isSafeHttpUrl — no host allowlist. */
 export function isAllowedLineUrl(value: string): boolean {
+  return isSafeHttpUrl(value);
+}
+
+export function toSafeHttpUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed || UNSAFE_SCHEME.test(trimmed)) return "";
+  let href = trimmed;
+  if (!/^https?:\/\//i.test(href)) {
+    if (href.startsWith("line.me") || /^lin\.ee\//i.test(href)) href = `https://${href}`;
+    else return "";
+  }
   try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    const host = url.hostname.toLowerCase();
-    if (LINE_HOSTS.has(host)) return true;
-    return host.endsWith(".line.me");
+    const url = new URL(href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString();
   } catch {
-    return false;
+    return "";
   }
 }
 
-function httpsUrl(value: string): string {
-  const url = new URL(value);
-  url.protocol = "https:";
-  return url.toString();
-}
-
-function decodeToken(raw: string): string {
-  let token = raw.trim();
-  try {
-    token = decodeURIComponent(token);
-  } catch {
-    /* keep */
-  }
-  return token.trim();
-}
-
-type ParsedLine =
-  | { kind: "official"; id: string }
-  | { kind: "personal"; id: string }
-  | { kind: "short"; url: string };
-
-function pathTokenToParsed(token: string): ParsedLine | null {
-  const t = decodeToken(token);
-  if (!t) return null;
+function bareTokenToAddFriend(token: string): string {
+  const t = token.trim();
+  if (!t) return "";
   if (t.startsWith("~")) {
-    const id = t.slice(1).trim();
-    return id && PERSONAL_ID.test(id) ? { kind: "personal", id } : null;
+    return `https://line.me/R/ti/p/~${encodeURIComponent(t.slice(1))}`;
   }
-  const officialStem = t.replace(/^(?:%40|@|＠)+/i, "");
-  if (officialStem && OFFICIAL_ID.test(officialStem)) {
-    return { kind: "official", id: officialStem };
+  if (/^[@＠]/.test(t)) {
+    const body = t.replace(/^[@＠]+/, "");
+    return `https://line.me/R/ti/p/%40${encodeURIComponent(body)}`;
   }
-  return null;
-}
-
-function parseBareToken(raw: string): ParsedLine | null {
-  const t = raw.trim();
-  if (!t) return null;
-  if (/^https?:\/\//i.test(t) || /^lin\.ee\//i.test(t)) return null;
-
-  if (t.startsWith("~")) {
-    const id = t.slice(1).trim();
-    return id && PERSONAL_ID.test(id) ? { kind: "personal", id } : null;
+  if (t.toLowerCase().startsWith("%40")) {
+    return `https://line.me/R/ti/p/%40${encodeURIComponent(t.slice(3))}`;
   }
+  return `https://line.me/R/ti/p/~${encodeURIComponent(t)}`;
+}
 
-  const official = t.replace(/^(?:@|＠)+/, "");
-  if (official && OFFICIAL_ID.test(official)) {
-    return { kind: "official", id: official };
+/**
+ * Final href for add-friend buttons. Full http(s) URLs are used as-is (any host).
+ * Otherwise builds line.me/R/ti/p/… (%40 when input had @, ~ when bare ID).
+ */
+export function resolveLineHref(lineUrl: string, lineId = ""): string {
+  const url = lineUrl.trim();
+  const id = lineId.trim();
+
+  const fromUrl = toSafeHttpUrl(url);
+  if (fromUrl) return fromUrl;
+
+  const fromId = toSafeHttpUrl(id);
+  if (fromId) return fromId;
+
+  const token = id || url;
+  return bareTokenToAddFriend(token);
+}
+
+function officialSegmentForChat(token: string): string {
+  const t = token.trim();
+  if (/^[@＠]/.test(t)) return `%40${encodeURIComponent(t.replace(/^[@＠]+/, ""))}`;
+  if (t.toLowerCase().startsWith("%40")) return `%40${encodeURIComponent(t.slice(3))}`;
+  if (t.startsWith("~")) return `~${encodeURIComponent(t.slice(1))}`;
+  return "";
+}
+
+export function resolveLineChatHref(lineUrl: string, lineId: string, message: string): string {
+  const add = resolveLineHref(lineUrl, lineId);
+  if (!add) return "";
+  const text = message.trim();
+  if (!text) return add;
+  if (toSafeHttpUrl(lineUrl.trim()) || toSafeHttpUrl(lineId.trim())) return add;
+
+  const token = lineId.trim() || lineUrl.trim();
+  const segment = officialSegmentForChat(token);
+  if (segment.startsWith("%40")) {
+    return `https://line.me/R/oaMessage/${segment}/?${encodeURIComponent(text)}`;
   }
-
-  return null;
-}
-
-function parseHttpLineUrl(url: string): ParsedLine | null {
-  const href = url.trim();
-  if (!href) return null;
-
-  const withScheme = /^https?:\/\//i.test(href) ? href : /^lin\.ee\//i.test(href) || href.startsWith("line.me") ? `https://${href}` : "";
-  if (!withScheme || !isAllowedLineUrl(withScheme)) return null;
-
-  if (new URL(withScheme).hostname.toLowerCase() === "lin.ee") {
-    return { kind: "short", url: httpsUrl(withScheme) };
-  }
-
-  try {
-    const host = new URL(withScheme).hostname.toLowerCase();
-    if (host === "line.me" || host.endsWith(".line.me")) {
-      const match = withScheme.match(LINE_ME_PATH_ID);
-      if (match?.[1]) return pathTokenToParsed(match[1]);
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-/** Parse site/staff LINE fields into official id, personal id, or a short add-friend URL. */
-export function parseLineInput(lineUrl: string, lineId: string): ParsedLine | null {
-  const idRaw = lineId.trim();
-  if (idRaw) {
-    if (idRaw.startsWith("~")) {
-      const id = idRaw.slice(1).trim();
-      if (id && PERSONAL_ID.test(id)) return { kind: "personal", id };
-    } else {
-      const id = idRaw.replace(/^(?:@|＠)+/, "");
-      if (id && OFFICIAL_ID.test(id)) return { kind: "official", id };
-    }
-  }
-
-  const urlRaw = lineUrl.trim();
-  if (!urlRaw) return null;
-
-  const fromHttp = parseHttpLineUrl(urlRaw);
-  if (fromHttp) return fromHttp;
-
-  return parseBareToken(urlRaw);
-}
-
-function officialWebPath(id: string): string {
-  return `https://line.me/R/ti/p/%40${encodeURIComponent(id)}`;
-}
-
-function personalWebPath(id: string): string {
-  return `https://line.me/R/ti/p/~${encodeURIComponent(id)}`;
-}
-
-function officialAppPath(id: string): string {
-  return `@${id}`;
-}
-
-function personalAppPath(id: string): string {
-  return `~${id}`;
-}
-
-function encodeMessage(message: string): string {
-  return encodeURIComponent(message.trim());
+  return add;
 }
 
 export function lineTarget(lineUrl: string, lineId: string, message = ""): LineTarget {
-  const parsed = parseLineInput(lineUrl, lineId);
-  const empty: LineTarget = { id: "", addFriendWeb: "", addFriendApp: "", chatWeb: "", chatApp: "" };
-  if (!parsed) return empty;
-
-  const text = encodeMessage(message || "您好，我想預約鑑賞。");
-
-  if (parsed.kind === "short") {
-    return {
-      id: "",
-      addFriendWeb: parsed.url,
-      addFriendApp: "",
-      chatWeb: parsed.url,
-      chatApp: "",
-    };
-  }
-
-  if (parsed.kind === "official") {
-    const addFriendWeb = officialWebPath(parsed.id);
-    const segment = officialAppPath(parsed.id);
-    const addFriendApp = `line://ti/p/${segment}`;
-    const chatWeb = `https://line.me/R/oaMessage/%40${encodeURIComponent(parsed.id)}/?${text}`;
-    const chatApp = `line://oaMessage/${segment}/?${text}`;
-    return { id: segment, addFriendWeb, addFriendApp, chatWeb, chatApp };
-  }
-
-  const addFriendWeb = personalWebPath(parsed.id);
-  const segment = personalAppPath(parsed.id);
+  const addFriendWeb = resolveLineHref(lineUrl, lineId);
+  const chatWeb = message.trim() ? resolveLineChatHref(lineUrl, lineId, message) : addFriendWeb;
   return {
-    id: segment,
+    id: "",
     addFriendWeb,
-    addFriendApp: `line://ti/p/${segment}`,
-    chatWeb: addFriendWeb,
-    chatApp: `line://ti/p/${segment}`,
+    addFriendApp: "",
+    chatWeb,
+    chatApp: "",
   };
 }
 
-/** Final https add-friend URL for display (admin preview + public links). */
 export function lineAddFriendHref(lineUrl: string, lineId = ""): string {
-  return lineTarget(lineUrl, lineId).addFriendWeb;
+  return resolveLineHref(lineUrl, lineId);
 }
 
 export function officialId(lineUrl: string, lineId: string): string {
-  const parsed = parseLineInput(lineUrl, lineId);
-  if (!parsed) return "";
-  if (parsed.kind === "official") return officialAppPath(parsed.id);
-  if (parsed.kind === "personal") return personalAppPath(parsed.id);
-  return "";
+  const token = lineId.trim() || lineUrl.trim();
+  if (/^[@＠]/.test(token)) return `@${token.replace(/^[@＠]+/, "")}`;
+  if (token.startsWith("~")) return token;
+  return token;
 }
 
 export function isLineContactInputValid(input: string): boolean {
   const raw = input.trim();
   if (!raw) return true;
-  return Boolean(lineTarget(raw, "").addFriendWeb);
+  if (UNSAFE_SCHEME.test(raw)) return false;
+  if (/^https?:\/\//i.test(raw)) return Boolean(toSafeHttpUrl(raw));
+  return raw.length > 0;
 }
 
-/** @deprecated Use raw storage + lineTarget at render; kept for callers that need a resolved URL. */
 export function resolveLineUrl(lineUrl: string, lineId: string): string {
-  return lineTarget(lineUrl, lineId).addFriendWeb;
+  return resolveLineHref(lineUrl, lineId);
 }

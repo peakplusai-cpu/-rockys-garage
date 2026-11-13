@@ -6,7 +6,6 @@ import { AdminDbError, classifyDbError } from "./admin-errors";
 import { parseBodyType, parseDoors, parseStatus } from "./catalog";
 import { safeImageUrl } from "./guards";
 import { HEALTH_PROBE_STAFF_ID } from "./health";
-import { isAllowedLineUrl } from "./line";
 import type { Admin, Car, Photo, SpecRow, Staff, Store } from "./types";
 import { seedStore } from "./seed";
 import { isAuthenticated } from "./session";
@@ -120,7 +119,7 @@ function presentPublicStaff(person: Staff): Staff {
   return {
     ...person,
     lineUserId: "",
-    lineUrl: isAllowedLineUrl(person.lineUrl) ? person.lineUrl : "",
+    lineUrl: person.lineUrl,
     note: person.note.slice(0, 500),
   };
 }

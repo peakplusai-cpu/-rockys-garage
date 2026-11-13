@@ -1,5 +1,5 @@
 import { canonicalInstagramUrl } from "@/lib/instagram";
-import { lineTarget } from "@/lib/line";
+import { resolveLineHref } from "@/lib/line";
 
 export function ContactButtons({
   lineUrl,
@@ -11,7 +11,7 @@ export function ContactButtons({
   inverted?: boolean;
 }) {
   const ghost = inverted ? "btn btn-ig" : "btn btn-ghost btn-ig";
-  const lineHref = lineTarget(lineUrl, "").addFriendWeb;
+  const lineHref = resolveLineHref(lineUrl, "");
   const instagramHref = canonicalInstagramUrl(instagramUrl);
   return (
     <div className="contact-row">

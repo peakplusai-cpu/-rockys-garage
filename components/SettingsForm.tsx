@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { lineAddFriendHref } from "@/lib/line";
+import { lineAddFriendHref, isLineContactInputValid } from "@/lib/line";
 import type { SiteSettings } from "@/lib/settings";
 
 export function SettingsForm({
@@ -15,7 +15,8 @@ export function SettingsForm({
   const [lineInput, setLineInput] = useState(settings.lineUrl);
   const [pending, startTransition] = useTransition();
 
-  const linePreview = useMemo(() => lineAddFriendHref(lineInput, ""), [lineInput]);
+  const lineResolved = useMemo(() => lineAddFriendHref(lineInput, ""), [lineInput]);
+  const lineOk = isLineContactInputValid(lineInput);
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -25,6 +26,11 @@ export function SettingsForm({
       const result = await action(body);
       if (result?.error) setError(result.error);
     });
+  }
+
+  function testLineLink() {
+    if (!lineResolved) return;
+    window.open(lineResolved, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -47,24 +53,27 @@ export function SettingsForm({
             spellCheck={false}
           />
           <p className="mute" style={{ marginTop: 10, lineHeight: 1.65, maxWidth: 560 }}>
-            可到 LINE Official Account Manager →「增加好友」→「建立好友連結／網址」複製官方加好友連結；也可直接貼
-            Basic ID（可含 @）、Premium ID、完整 line.me 網址或 lin.ee 短網址。儲存時會保留你輸入的原文，前台按鈕會自動轉成正確連結。
+            可到 LINE Official Account Manager →「增加好友」→「建立好友連結／網址」複製連結；也可貼 Basic／Premium
+            ID 或任意 https 網址（會原樣使用）。儲存保留原文，前台依下方「解析後連結」開啟。
           </p>
           {lineInput.trim() ? (
-            <p className="line-preview" style={{ marginTop: 12 }}>
+            <div className="line-preview" style={{ marginTop: 12 }}>
               <span className="engraved" style={{ display: "block", marginBottom: 6 }}>
-                加好友連結預覽
+                解析後連結（前台按鈕實際開啟）
               </span>
-              {linePreview ? (
-                <a href={linePreview} target="_blank" rel="noopener noreferrer" className="link-line">
-                  {linePreview}
-                </a>
+              {lineOk && lineResolved ? (
+                <>
+                  <code style={{ display: "block", wordBreak: "break-all", marginBottom: 10 }}>{lineResolved}</code>
+                  <button type="button" className="btn btn-ghost" onClick={testLineLink}>
+                    測試開啟連結
+                  </button>
+                </>
               ) : (
                 <span className="flash-bad" role="alert">
-                  無法辨識此格式，請檢查 ID 或網址。
+                  {UNSAFE_HINT(lineInput)}
                 </span>
               )}
-            </p>
+            </div>
           ) : null}
         </div>
         <div className="field wide">
@@ -106,9 +115,14 @@ export function SettingsForm({
           );
         })}
       </div>
-      <button className="btn" type="submit" disabled={pending || (lineInput.trim() !== "" && !linePreview)}>
+      <button className="btn" type="submit" disabled={pending || (lineInput.trim() !== "" && !lineOk)}>
         {pending ? "儲存中…" : "儲存"}
       </button>
     </form>
   );
+}
+
+function UNSAFE_HINT(input: string) {
+  if (/^(javascript|data):/i.test(input.trim())) return "不允許 javascript: 或 data: 網址。";
+  return "請輸入 ID 或 http(s) 網址。";
 }

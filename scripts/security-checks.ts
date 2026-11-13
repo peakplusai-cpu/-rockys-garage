@@ -5,7 +5,7 @@ import { isBlockedAdminPassword, resolveSessionSecret, safeEqual, safeImageUrl }
 import { MAX_UPLOAD_BYTES, sniffImage } from "../lib/images";
 import { issueUploadProof, verifyUploadProof } from "../lib/upload-ticket";
 import { canonicalInstagramUrl, isAllowedInstagramUrl } from "../lib/instagram";
-import { isAllowedLineUrl, lineTarget } from "../lib/line";
+import { isAllowedLineUrl, lineTarget, resolveLineHref, toSafeHttpUrl } from "../lib/line";
 import { hashPassword, verifyPassword } from "../lib/password";
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
@@ -26,9 +26,15 @@ assert.equal(safeImageUrl("https://user:pass@cdn.example/a.jpg"), "");
 
 assert.equal(isAllowedLineUrl("https://line.me/R/ti/p/@rockysgarage"), true);
 assert.equal(isAllowedLineUrl("https://lin.ee/abc"), true);
-assert.equal(isAllowedLineUrl("https://evil.example/line"), false);
-assert.equal(lineTarget("https://evil.example", "").addFriendWeb, "");
-assert.equal(lineTarget("", "@rockysgarage").addFriendWeb, "https://line.me/R/ti/p/@rockysgarage");
+assert.equal(isAllowedLineUrl("https://evil.example/line"), true);
+assert.equal(toSafeHttpUrl("javascript:alert(1)"), "");
+assert.equal(resolveLineHref("https://evil.example/line", ""), "https://evil.example/line");
+assert.equal(
+  resolveLineHref("https://line.me/R/ti/p/@rockysgarage", ""),
+  "https://line.me/R/ti/p/@rockysgarage"
+);
+assert.equal(lineTarget("", "@rockysgarage").addFriendWeb, "https://line.me/R/ti/p/%40rockysgarage");
+assert.equal(lineTarget("", "rockysgarage").addFriendWeb, "https://line.me/R/ti/p/~rockysgarage");
 assert.equal(isAllowedInstagramUrl("https://instagram.com/rockysgarage"), true);
 assert.equal(isAllowedInstagramUrl("https://evil.com/ig"), false);
 assert.equal(canonicalInstagramUrl("http://instagram.com/rockysgarage"), "https://instagram.com/rockysgarage");
