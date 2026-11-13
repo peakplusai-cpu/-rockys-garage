@@ -35,7 +35,12 @@ assert.equal(
 );
 assert.equal(lineTarget("", "@rockysgarage").addFriendWeb, "https://line.me/R/ti/p/%40rockysgarage");
 assert.equal(lineTarget("", "rockysgarage").addFriendWeb, "https://line.me/R/ti/p/%40rockysgarage");
-assert.equal(lineTarget("", "~personal123").addFriendWeb, "https://line.me/R/ti/p/~personal123");
+assert.equal(lineTarget("", "~personal123").addFriendWeb, "https://line.me/ti/p/~personal123");
+assert.equal(resolveLineHref("~personal123", ""), "https://line.me/ti/p/~personal123");
+assert.equal(resolveLineHref("https://line.me/R/ti/p/~personal123", ""), "https://line.me/ti/p/~personal123");
+assert.equal(resolveLineHref("https://line.me/ti/p/~personal123", ""), "https://line.me/ti/p/~personal123");
+assert.equal(resolveLineHref("https://line.me/ti/p/AbC123xYz", ""), "https://line.me/ti/p/AbC123xYz");
+assert.equal(resolveLineHref("https://line.me/ti/p/@rockysgarage", ""), "https://line.me/R/ti/p/%40rockysgarage");
 assert.equal(isAllowedInstagramUrl("https://instagram.com/rockysgarage"), true);
 assert.equal(isAllowedInstagramUrl("https://evil.com/ig"), false);
 assert.equal(canonicalInstagramUrl("http://instagram.com/rockysgarage"), "https://instagram.com/rockysgarage");

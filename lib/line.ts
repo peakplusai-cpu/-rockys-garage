@@ -43,24 +43,27 @@ export function toSafeHttpUrl(raw: string): string {
   }
 }
 
-/** Encode add-friend path segment: official → %40id, personal → ~id (only when input had ~). */
-export function encodeLinePathId(segment: string): string {
+function decodeSegment(segment: string): string {
   let decoded = segment.trim();
   try {
     decoded = decodeURIComponent(decoded);
   } catch {
     /* keep */
   }
-  if (decoded.startsWith("~")) {
-    return `~${encodeURIComponent(decoded.slice(1))}`;
-  }
-  const officialBody = decoded.replace(/^(?:%40|@|＠)+/i, "");
-  if (!officialBody) return "";
-  return `%40${encodeURIComponent(officialBody)}`;
+  return decoded;
+}
+
+/** Encode an official-account ID path segment as %40id. */
+export function encodeLinePathId(segment: string): string {
+  const body = decodeSegment(segment).replace(/^(?:%40|@|＠)+/i, "");
+  return body ? `%40${encodeURIComponent(body)}` : "";
 }
 
 /**
- * Fix line.me URLs pasted from the manager (literal @ in path often 404s).
+ * Normalize line.me add-friend URLs:
+ * - @id / %40id (official) -> /R/ti/p/%40id (a literal @ in the path often 404s)
+ * - ~id (personal LINE ID) -> /ti/p/~id
+ * - anything else (e.g. personal share codes /ti/p/AbC123) is left untouched.
  * lin.ee and non-line hosts are unchanged.
  */
 export function canonicalizeLineHttpUrl(href: string): string {
@@ -69,22 +72,27 @@ export function canonicalizeLineHttpUrl(href: string): string {
     const host = url.hostname.toLowerCase();
     if (host !== "line.me" && !host.endsWith(".line.me")) return href;
 
-    const add = url.pathname.match(LINE_ADD_FRIEND);
-    if (add) {
-      url.pathname = `/R/ti/p/${encodeLinePathId(add[1])}`;
-      return url.toString();
-    }
-
-    const legacy = url.pathname.match(LINE_LEGACY_TI_P);
-    if (legacy) {
-      url.pathname = `/R/ti/p/${encodeLinePathId(legacy[1])}`;
-      return url.toString();
+    const addMatch = url.pathname.match(LINE_ADD_FRIEND) ?? url.pathname.match(LINE_LEGACY_TI_P);
+    if (addMatch) {
+      const decoded = decodeSegment(addMatch[1]);
+      if (decoded.startsWith("~")) {
+        url.pathname = `/ti/p/~${encodeURIComponent(decoded.slice(1))}`;
+        return url.toString();
+      }
+      if (/^(?:@|＠)/.test(decoded) || addMatch[1].toLowerCase().startsWith("%40")) {
+        url.pathname = `/R/ti/p/${encodeLinePathId(addMatch[1])}`;
+        return url.toString();
+      }
+      return href;
     }
 
     const oa = url.pathname.match(LINE_OA_MESSAGE);
     if (oa) {
-      url.pathname = `/R/oaMessage/${encodeLinePathId(oa[1])}`;
-      return url.toString();
+      const decoded = decodeSegment(oa[1]);
+      if (/^(?:@|＠)/.test(decoded) || oa[1].toLowerCase().startsWith("%40")) {
+        url.pathname = `/R/oaMessage/${encodeLinePathId(oa[1])}`;
+        return url.toString();
+      }
     }
 
     return href;
@@ -97,7 +105,7 @@ function bareTokenToAddFriend(token: string): string {
   const t = token.trim();
   if (!t) return "";
   if (t.startsWith("~")) {
-    return `https://line.me/R/ti/p/~${encodeURIComponent(t.slice(1))}`;
+    return `https://line.me/ti/p/~${encodeURIComponent(t.slice(1).trim())}`;
   }
   return `https://line.me/R/ti/p/${encodeLinePathId(t)}`;
 }

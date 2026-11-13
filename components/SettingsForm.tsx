@@ -57,6 +57,10 @@ export function SettingsForm({
             ID（須為官方帳號的真實 Basic／Premium ID，不是範例 rockysgarage）或官方後台複製的 https
             連結。line.me 網址會自動把路徑裡的 @ 改成 %40（避免 404）；lin.ee 原樣使用。
           </p>
+          <p className="mute" style={{ marginTop: 6, lineHeight: 1.65, maxWidth: 560 }}>
+            個人 LINE：請填 <code>~你的LINE ID</code>（前面加 ~，需先在 LINE 設定好 ID 並開啟「允許他人透過 ID 加好友」），
+            或貼個人「加好友連結」（LINE App →主頁→加好友→QR 碼→分享／複製連結，形如 line.me/ti/p/xxxx，會原樣使用）。
+          </p>
           {lineInput.trim() ? (
             <div className="line-preview" style={{ marginTop: 12 }}>
               <span className="engraved" style={{ display: "block", marginBottom: 6 }}>
