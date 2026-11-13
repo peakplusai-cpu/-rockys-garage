@@ -20,7 +20,20 @@ export function CarForm({
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  async function onUpload(files: FileList | null) {
+  const photoList = Array.from(
+    new Set(
+      photoUrls
+        .split("\n")
+        .map((url) => url.trim())
+        .filter(Boolean)
+    )
+  );
+
+  function removePhoto(url: string) {
+    setPhotoUrls(photoList.filter((item) => item !== url).join("\n"));
+  }
+
+  async function onUpload(files: FileList | null, input?: HTMLInputElement) {
     if (!files?.length) return;
     setUploading(true);
     setError("");
@@ -32,8 +45,13 @@ export function CarForm({
         setError(error instanceof Error ? error.message : "照片上傳失敗：網路錯誤。");
       }
     }
-    setPhotoUrls((prev) => [prev, ...next].filter(Boolean).join("\n"));
+    setPhotoUrls((prev) => {
+      const seen = new Set(prev.split("\n").map((line) => line.trim()).filter(Boolean));
+      const added = next.filter((url) => !seen.has(url));
+      return [prev.trim(), ...added].filter(Boolean).join("\n");
+    });
     setUploading(false);
+    if (input) input.value = "";
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -166,8 +184,11 @@ export function CarForm({
             value={photoUrls}
             onChange={(event) => setPhotoUrls(event.target.value)}
           />
-          <input type="file" accept="image/*" multiple onChange={(event) => onUpload(event.target.files)} />
+          <input type="file" accept="image/*" multiple onChange={(event) => onUpload(event.target.files, event.target)} />
           {uploading ? <p className="mute">上傳中…</p> : null}
+          <p className="mute" style={{ marginTop: 8 }}>
+            目前共 {photoList.length} 張（第 1 張是封面）。縮圖右上角的 × 可移除；重複的網址會自動合併。
+          </p>
         </div>
         <div className="field">
           <label>
@@ -181,12 +202,17 @@ export function CarForm({
         </div>
       </div>
       <div className="thumb-row">
-        {photoUrls
-          .split("\n")
+        {photoList
           .map((url) => safeImageUrl(url))
           .filter(Boolean)
-          .map((url) => (
-            <img key={url} src={url} alt="" />
+          .map((url, index) => (
+            <div className="thumb-item" key={url}>
+              <img src={url} alt="" />
+              <span className="thumb-index">{index + 1}</span>
+              <button type="button" className="thumb-remove" aria-label={`移除第 ${index + 1} 張`} onClick={() => removePhoto(url)}>
+                ×
+              </button>
+            </div>
           ))}
       </div>
       <button className="btn" type="submit" disabled={pending || uploading}>

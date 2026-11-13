@@ -49,7 +49,7 @@ function parseCar(formData: FormData, existing?: Car): Omit<Car, "id" | "created
   const photoUrls = String(formData.get("photoUrls") ?? "")
     .split("\n")
     .map((line) => safeImageUrl(line))
-    .filter(Boolean)
+    .filter((url, index, all) => Boolean(url) && all.indexOf(url) === index)
     .slice(0, 30);
   const photos: Photo[] = photoUrls.map((url, index) => ({
     id: existing?.photos[index]?.id ?? uid("ph"),
