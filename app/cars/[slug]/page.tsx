@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
+import { CarGallery, GalleryGrid } from "@/components/CarGallery";
 import { ContactButtons } from "@/components/ContactButtons";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
-import { PhotoFrame } from "@/components/PhotoFrame";
 import { bodyLabel, doorLabel } from "@/lib/catalog";
 import { formatMileage, formatPrice, statusLabel } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
@@ -23,17 +23,13 @@ export default async function CarPage({ params }: { params: Promise<{ slug: stri
     getSettings(),
   ]);
   if (!car) notFound();
-  const cover = car.photos[0];
   const rest = car.photos.slice(1);
   const equipment = car.equipment.length ? car.equipment : car.options;
 
   return (
     <>
       <Header />
-      <section className="detail-hero">
-        {cover ? (
-          <PhotoFrame src={cover.url} alt={cover.alt || `${car.make} ${car.model}`} className="detail-photo" eager />
-        ) : null}
+      <CarGallery photos={car.photos} label={`${car.make} ${car.model}`}>
         <div className="detail-shade" />
         <div className="detail-title">
           <p className="engraved">
@@ -46,7 +42,7 @@ export default async function CarPage({ params }: { params: Promise<{ slug: stri
             {car.year} · {formatMileage(car.mileage)}
           </p>
         </div>
-      </section>
+      </CarGallery>
 
       <div className="price-band">
         <div>
@@ -122,16 +118,7 @@ export default async function CarPage({ params }: { params: Promise<{ slug: stri
       {rest.length ? (
         <section className="gallery" aria-label="更多照片">
           <p className="gallery-label">更多照片 · {rest.length}</p>
-          <div className="gallery-grid">
-            {rest.map((photo, index) => (
-              <PhotoFrame
-                key={photo.id}
-                src={photo.url}
-                alt={photo.alt || `${car.make} ${car.model} ${index + 2}`}
-                className="gallery-item"
-              />
-            ))}
-          </div>
+          <GalleryGrid photos={rest} label={`${car.make} ${car.model}`} />
         </section>
       ) : null}
 

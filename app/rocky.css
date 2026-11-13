@@ -495,8 +495,23 @@ body::before {
   border-radius: var(--radius);
 }
 
-.gallery .gallery-item:first-child {
+.gallery-tile {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: zoom-in;
+  text-align: left;
+}
+
+.gallery-tile:first-child {
   grid-column: 1 / -1;
+}
+
+.gallery-tile:first-child .gallery-item {
   aspect-ratio: 16 / 9;
 }
 
@@ -525,7 +540,7 @@ button {
 }
 
 /* Touch devices: no sticky :hover lift/zoom (it made links feel stuck on the photo) */
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .card a:hover .card-media,
   .card a:hover .card-media img {
     transform: none;
@@ -703,7 +718,7 @@ button {
   }
 
   .gallery .gallery-item,
-  .gallery .gallery-item:first-child {
+  .gallery-tile:first-child .gallery-item {
     aspect-ratio: 3 / 2;
     border-radius: 0;
   }
@@ -717,5 +732,229 @@ button {
   .site-footer .contact-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Car photo carousel (swipe), thumbnails, fullscreen viewer            */
+/* ------------------------------------------------------------------ */
+.cg-stage {
+  position: absolute;
+  inset: 0;
+  outline: none;
+}
+
+.cg-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.cg-track::-webkit-scrollbar {
+  display: none;
+}
+
+.cg-slide {
+  position: relative;
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  cursor: zoom-in;
+}
+
+.detail-hero .cg-slide .photo-frame {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  aspect-ratio: auto;
+}
+
+.detail-shade,
+.detail-title {
+  pointer-events: none;
+}
+
+.detail-shade {
+  z-index: 1;
+}
+
+.detail-title {
+  z-index: 2;
+}
+
+.cg-counter {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.cg-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 4px;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.cg-arrow:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0a;
+}
+
+.cg-arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.cg-prev {
+  left: 16px;
+}
+
+.cg-next {
+  right: 16px;
+}
+
+.cg-thumbs {
+  display: flex;
+  gap: 8px;
+  padding: 14px var(--pad);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--hair);
+}
+
+.cg-thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.cg-thumb {
+  flex: 0 0 auto;
+  width: 104px;
+  aspect-ratio: 3 / 2;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.cg-thumb[data-on="true"] {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.cg-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cg-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+}
+
+.cg-track-full {
+  height: 100%;
+}
+
+.cg-slide-full {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 0;
+  cursor: default;
+}
+
+.cg-slide-full img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.cg-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 5;
+  width: 48px;
+  height: 48px;
+  font-size: 34px;
+  line-height: 1;
+  padding: 0 0 4px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.cg-lightbox .cg-counter {
+  top: 20px;
+  left: 16px;
+  right: auto;
+  bottom: auto;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .cg-arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .cg-stage {
+    position: relative;
+    inset: auto;
+    aspect-ratio: 3 / 2;
+  }
+
+  .cg-thumbs {
+    padding: 10px var(--pad);
+  }
+
+  .cg-thumb {
+    width: 76px;
+  }
+
+  .cg-counter {
+    right: 10px;
+    bottom: 10px;
   }
 }
