@@ -1,5 +1,5 @@
 import { canonicalInstagramUrl } from "./instagram";
-import { lineTarget } from "./line";
+import { isLineContactInputValid } from "./line";
 
 export function isHttpUrl(value: string): boolean {
   try {
@@ -14,8 +14,8 @@ export function parseContactUrl(input: string, kind: "line" | "instagram"): { ok
   const raw = input.trim();
   if (!raw) return { ok: true, url: "" };
   if (kind === "line") {
-    const url = lineTarget(isHttpUrl(raw) ? raw : "", isHttpUrl(raw) ? "" : raw).addFriendWeb;
-    return url ? { ok: true, url } : { ok: false };
+    if (!isLineContactInputValid(raw)) return { ok: false };
+    return { ok: true, url: raw };
   }
   if (isHttpUrl(raw)) {
     const url = canonicalInstagramUrl(raw);

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { classifyDbError, isRedirectError } from "@/lib/admin-errors";
 import { isAuthenticated } from "@/lib/auth";
 import { uid } from "@/lib/id";
-import { resolveLineUrl } from "@/lib/line";
+import { lineTarget } from "@/lib/line";
 import { listAdminStaff, removeStaff, saveStaff } from "@/lib/store";
 
 async function requireAuth() {
@@ -23,10 +23,10 @@ export async function upsertStaff(formData: FormData) {
   const lineUrlRaw = String(formData.get("lineUrl") ?? "").trim().slice(0, 300);
   const note = String(formData.get("note") ?? "").trim().slice(0, 500);
   const sortOrder = Number(formData.get("sortOrder") ?? 0);
-  const lineUrl = resolveLineUrl(lineUrlRaw, lineId);
-  if (!lineUrl) {
+  if (!lineTarget(lineUrlRaw, lineId).addFriendWeb) {
     redirect("/admin/staff?error=line");
   }
+  const lineUrl = lineUrlRaw;
   try {
     const staff = await listAdminStaff();
     const existing = staff.find((person) => person.id === id);
