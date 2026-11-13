@@ -31,10 +31,11 @@ assert.equal(toSafeHttpUrl("javascript:alert(1)"), "");
 assert.equal(resolveLineHref("https://evil.example/line", ""), "https://evil.example/line");
 assert.equal(
   resolveLineHref("https://line.me/R/ti/p/@rockysgarage", ""),
-  "https://line.me/R/ti/p/@rockysgarage"
+  "https://line.me/R/ti/p/%40rockysgarage"
 );
 assert.equal(lineTarget("", "@rockysgarage").addFriendWeb, "https://line.me/R/ti/p/%40rockysgarage");
-assert.equal(lineTarget("", "rockysgarage").addFriendWeb, "https://line.me/R/ti/p/~rockysgarage");
+assert.equal(lineTarget("", "rockysgarage").addFriendWeb, "https://line.me/R/ti/p/%40rockysgarage");
+assert.equal(lineTarget("", "~personal123").addFriendWeb, "https://line.me/R/ti/p/~personal123");
 assert.equal(isAllowedInstagramUrl("https://instagram.com/rockysgarage"), true);
 assert.equal(isAllowedInstagramUrl("https://evil.com/ig"), false);
 assert.equal(canonicalInstagramUrl("http://instagram.com/rockysgarage"), "https://instagram.com/rockysgarage");

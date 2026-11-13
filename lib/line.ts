@@ -12,6 +12,10 @@ export type LineTarget = {
 
 const UNSAFE_SCHEME = /^(javascript|data|vbscript):/i;
 
+const LINE_ADD_FRIEND = /^\/R\/ti\/p\/([^/?#]+)/i;
+const LINE_LEGACY_TI_P = /^\/ti\/p\/([^/?#]+)/i;
+const LINE_OA_MESSAGE = /^\/R\/oaMessage\/([^/?#]+)/i;
+
 /** http(s) on any host; rejects javascript:/data: only. */
 export function isSafeHttpUrl(value: string): boolean {
   return Boolean(toSafeHttpUrl(value));
@@ -39,35 +43,78 @@ export function toSafeHttpUrl(raw: string): string {
   }
 }
 
+/** Encode add-friend path segment: official → %40id, personal → ~id (only when input had ~). */
+export function encodeLinePathId(segment: string): string {
+  let decoded = segment.trim();
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    /* keep */
+  }
+  if (decoded.startsWith("~")) {
+    return `~${encodeURIComponent(decoded.slice(1))}`;
+  }
+  const officialBody = decoded.replace(/^(?:%40|@|＠)+/i, "");
+  if (!officialBody) return "";
+  return `%40${encodeURIComponent(officialBody)}`;
+}
+
+/**
+ * Fix line.me URLs pasted from the manager (literal @ in path often 404s).
+ * lin.ee and non-line hosts are unchanged.
+ */
+export function canonicalizeLineHttpUrl(href: string): string {
+  try {
+    const url = new URL(href);
+    const host = url.hostname.toLowerCase();
+    if (host !== "line.me" && !host.endsWith(".line.me")) return href;
+
+    const add = url.pathname.match(LINE_ADD_FRIEND);
+    if (add) {
+      url.pathname = `/R/ti/p/${encodeLinePathId(add[1])}`;
+      return url.toString();
+    }
+
+    const legacy = url.pathname.match(LINE_LEGACY_TI_P);
+    if (legacy) {
+      url.pathname = `/R/ti/p/${encodeLinePathId(legacy[1])}`;
+      return url.toString();
+    }
+
+    const oa = url.pathname.match(LINE_OA_MESSAGE);
+    if (oa) {
+      url.pathname = `/R/oaMessage/${encodeLinePathId(oa[1])}`;
+      return url.toString();
+    }
+
+    return href;
+  } catch {
+    return href;
+  }
+}
+
 function bareTokenToAddFriend(token: string): string {
   const t = token.trim();
   if (!t) return "";
   if (t.startsWith("~")) {
     return `https://line.me/R/ti/p/~${encodeURIComponent(t.slice(1))}`;
   }
-  if (/^[@＠]/.test(t)) {
-    const body = t.replace(/^[@＠]+/, "");
-    return `https://line.me/R/ti/p/%40${encodeURIComponent(body)}`;
-  }
-  if (t.toLowerCase().startsWith("%40")) {
-    return `https://line.me/R/ti/p/%40${encodeURIComponent(t.slice(3))}`;
-  }
-  return `https://line.me/R/ti/p/~${encodeURIComponent(t)}`;
+  return `https://line.me/R/ti/p/${encodeLinePathId(t)}`;
 }
 
 /**
- * Final href for add-friend buttons. Full http(s) URLs are used as-is (any host).
- * Otherwise builds line.me/R/ti/p/… (%40 when input had @, ~ when bare ID).
+ * Final href for add-friend buttons. http(s) on any host; line.me URLs get @→%40 fix.
+ * Non-URL tokens: official ID (with or without @, or bare Premium/Basic) → %40…; ~prefix → personal.
  */
 export function resolveLineHref(lineUrl: string, lineId = ""): string {
   const url = lineUrl.trim();
   const id = lineId.trim();
 
   const fromUrl = toSafeHttpUrl(url);
-  if (fromUrl) return fromUrl;
+  if (fromUrl) return canonicalizeLineHttpUrl(fromUrl);
 
   const fromId = toSafeHttpUrl(id);
-  if (fromId) return fromId;
+  if (fromId) return canonicalizeLineHttpUrl(fromId);
 
   const token = id || url;
   return bareTokenToAddFriend(token);
@@ -75,10 +122,8 @@ export function resolveLineHref(lineUrl: string, lineId = ""): string {
 
 function officialSegmentForChat(token: string): string {
   const t = token.trim();
-  if (/^[@＠]/.test(t)) return `%40${encodeURIComponent(t.replace(/^[@＠]+/, ""))}`;
-  if (t.toLowerCase().startsWith("%40")) return `%40${encodeURIComponent(t.slice(3))}`;
-  if (t.startsWith("~")) return `~${encodeURIComponent(t.slice(1))}`;
-  return "";
+  if (t.startsWith("~")) return "";
+  return encodeLinePathId(t);
 }
 
 export function resolveLineChatHref(lineUrl: string, lineId: string, message: string): string {
@@ -86,9 +131,22 @@ export function resolveLineChatHref(lineUrl: string, lineId: string, message: st
   if (!add) return "";
   const text = message.trim();
   if (!text) return add;
-  if (toSafeHttpUrl(lineUrl.trim()) || toSafeHttpUrl(lineId.trim())) return add;
 
   const token = lineId.trim() || lineUrl.trim();
+  if (toSafeHttpUrl(lineUrl.trim()) || toSafeHttpUrl(lineId.trim())) {
+    try {
+      const url = new URL(add);
+      const oa = url.pathname.match(LINE_OA_MESSAGE);
+      if (oa) {
+        url.search = `?${encodeURIComponent(text)}`;
+        return url.toString();
+      }
+    } catch {
+      /* fall through */
+    }
+    return add;
+  }
+
   const segment = officialSegmentForChat(token);
   if (segment.startsWith("%40")) {
     return `https://line.me/R/oaMessage/${segment}/?${encodeURIComponent(text)}`;

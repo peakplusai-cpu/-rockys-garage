@@ -54,7 +54,8 @@ export function SettingsForm({
           />
           <p className="mute" style={{ marginTop: 10, lineHeight: 1.65, maxWidth: 560 }}>
             可到 LINE Official Account Manager →「增加好友」→「建立好友連結／網址」複製連結；也可貼 Basic／Premium
-            ID 或任意 https 網址（會原樣使用）。儲存保留原文，前台依下方「解析後連結」開啟。
+            ID（須為官方帳號的真實 Basic／Premium ID，不是範例 rockysgarage）或官方後台複製的 https
+            連結。line.me 網址會自動把路徑裡的 @ 改成 %40（避免 404）；lin.ee 原樣使用。
           </p>
           {lineInput.trim() ? (
             <div className="line-preview" style={{ marginTop: 12 }}>
