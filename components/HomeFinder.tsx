@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { PhotoFrame } from "@/components/PhotoFrame";
 import { RockyHero } from "@/components/RockyHero";
 import { RockyMarquee } from "@/components/RockyMarquee";
 import { SocialEmbed } from "@/components/SocialEmbed";
@@ -149,7 +150,7 @@ export function HomeFinder({
                 <Link href={`/cars/${car.slug}`}>
                   <div className="card-media">
                     {car.photos[0] ? (
-                      <img src={car.photos[0].url} alt={`${car.make} ${car.model}`} />
+                      <PhotoFrame src={car.photos[0].url} alt={`${car.make} ${car.model}`} />
                     ) : null}
                   </div>
                   <div className="card-meta">

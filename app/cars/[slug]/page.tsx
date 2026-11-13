@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ContactButtons } from "@/components/ContactButtons";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
+import { PhotoFrame } from "@/components/PhotoFrame";
 import { bodyLabel, doorLabel } from "@/lib/catalog";
 import { formatMileage, formatPrice, statusLabel } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
@@ -30,7 +31,9 @@ export default async function CarPage({ params }: { params: Promise<{ slug: stri
     <>
       <Header />
       <section className="detail-hero">
-        {cover ? <img src={cover.url} alt={cover.alt || `${car.make} ${car.model}`} /> : null}
+        {cover ? (
+          <PhotoFrame src={cover.url} alt={cover.alt || `${car.make} ${car.model}`} className="detail-photo" eager />
+        ) : null}
         <div className="detail-shade" />
         <div className="detail-title">
           <p className="engraved">
@@ -116,13 +119,18 @@ export default async function CarPage({ params }: { params: Promise<{ slug: stri
         </section>
       ) : null}
 
-      {car.photos.length > 1 ? (
-        <section className="gallery">
-          <img className="gallery-main" src={(rest[0] ?? cover)?.url} alt={(rest[0] ?? cover)?.alt} />
-          <div className="gallery-stack">
-            {(rest[1] ? [rest[1], cover] : car.photos.slice(0, 2)).map((photo) =>
-              photo ? <img key={photo.id} src={photo.url} alt={photo.alt} /> : null
-            )}
+      {rest.length ? (
+        <section className="gallery" aria-label="更多照片">
+          <p className="gallery-label">更多照片 · {rest.length}</p>
+          <div className="gallery-grid">
+            {rest.map((photo, index) => (
+              <PhotoFrame
+                key={photo.id}
+                src={photo.url}
+                alt={photo.alt || `${car.make} ${car.model} ${index + 2}`}
+                className="gallery-item"
+              />
+            ))}
           </div>
         </section>
       ) : null}
